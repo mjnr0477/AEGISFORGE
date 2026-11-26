@@ -29,3 +29,11 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Added detection of unsafe PyYAML load/unsafe_load calls while allowing SafeLoader and safe_load.
 - Added detection of container configurations that enable privilege escalation.
 - Added positive and negative regression tests for both rules.
+
+## 0.2.0 — deterministic mission engine
+
+- Added an explicit local tool registry with a serializable catalog and clear read-only versus mutating capabilities.
+- Required explicit approval before a registered mutating tool can execute.
+- Added a local security-audit mission that sequences scanning, repair proposal generation, optional approved application, and post-change verification.
+- Added CLI commands for inspecting local tools and running the audit mission.
+- Added mission-level tests for permission gating, clean projects, incomplete scans, preview-only behavior, and approved repair verification.

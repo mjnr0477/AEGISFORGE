@@ -178,6 +178,30 @@ class ControlledTrialTests(unittest.TestCase):
             self.assertEqual(report["decision"], "accepted")
             self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
 
+    def test_rejects_malformed_python_candidate_as_incomplete(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "app.py"
+            original = "value = 1\\n"
+            source.write_text(original, encoding="utf-8")
+
+            report = run_trial(root, make_plan("app.py", original, "def broken(\\n"))
+
+            self.assertEqual(report["decision"], "rejected")
+            self.assertTrue(report["candidate_scan_errors"])
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
+    def test_refuses_incomplete_baseline_scan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "app.py"
+            original = "def broken(\\n"
+            source.write_text(original, encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "baseline scan is incomplete"):
+                run_trial(root, make_plan("app.py", original, "value = 1\\n"))
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
     def test_candidate_project_code_is_never_executed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

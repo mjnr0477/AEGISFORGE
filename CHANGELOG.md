@@ -52,3 +52,12 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Added candidate findings when tainted values reach `eval`/`exec`, shell-enabled subprocess calls, or SQL query text passed to `execute()`.
 - Added negative tests for parameterized SQL values, unused input, and constant expressions.
 - Documented analysis limits: no interprocedural flow, complete sanitizer reasoning, or universal framework coverage.
+
+## 0.4.1 — flow provenance and review clarity
+
+- Added source-line provenance to intra-function data-flow findings.
+- Expanded recognized request sources to common Flask, ASGI and Django request objects.
+- Added conservative async-iteration propagation and isolated lambda definition state from later expressions.
+- Kept sinks argument-specific so untrusted values in unrelated keyword options are not treated as command/query injection.
+- Added a manual-review finding list to missions; failed or incomplete missions expose all remaining findings for human review.
+- Added regression tests for async loops, lambda boundaries, source-line provenance, framework request sources and failed mission repair review.

@@ -2,7 +2,7 @@
 
 **Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, builds a structural index of Python projects, checks selected local source-to-sink flows, tracks baselines, prepares repairs, and sequences approved tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.4.0
+## Current repository build: 0.4.1
 
 The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
 
@@ -40,7 +40,7 @@ The project map indexes Python modules, imports, classes, functions, and syntact
 
 ### Local data-flow checks
 
-The scanner follows a limited set of common request/input expressions through simple assignments within a single function. It checks whether those values reach `eval`/`exec`, shell-enabled subprocess calls, or the SQL query-text argument to `execute()`. It deliberately does not flag tainted values used only as parameterized SQL values. The analyzer does not track flows across function boundaries, prove sanitizer correctness, or cover every framework and source/sink. Treat results as review candidates, not proof of exploitability.
+The scanner follows common Flask, ASGI and Django request expressions, `input()`, and `sys.argv` through simple local assignments and supported async iteration. It checks whether those values reach the actual code, command, or SQL query-text argument of `eval`/`exec`, shell-enabled subprocess calls, and `execute()`. Findings include the input source line and sink location. Lambda definitions are not treated as executed return values, although sinks inside lambda bodies are inspected. It deliberately does not flag tainted values used only as parameterized SQL values. The analyzer does not track flows across function boundaries, prove sanitizer correctness, or cover every framework and source/sink. Treat results as review candidates, not proof of exploitability.
 
 ### Local browser workbench
 
@@ -66,7 +66,7 @@ aegisforge mission audit ./my-project --apply-supported-repairs
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
 
-The mission runner is a deterministic local workflow engine, not a general AI model. It maps the Python structure, scans the project, prepares supported repair proposals, and pauses for approval before any file changes. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
+The mission runner is a deterministic local workflow engine, not a general AI model. It maps the Python structure, scans the project, prepares supported repair proposals, and pauses for approval before any file changes. Its report separates built-in repair proposals from findings that still need manual security review. If a mission fails or becomes incomplete, it returns all remaining findings to the manual-review list. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
 
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission runs return 2 when the workflow fails or cannot complete its scan.
 

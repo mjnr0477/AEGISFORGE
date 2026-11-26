@@ -19,6 +19,9 @@ AegisForge v0.4.1 is a local-first static security workbench, Python source mapp
 13. The mission trial command loads either a strict hash-checked change plan or a plan generated from built-in deterministic repair previews.
 14. Trial execution snapshots supported files once into a temporary workspace, scans that stable snapshot, applies replacements only inside the workspace, then rescans and compares static findings. It does not run shell commands or candidate project code.
 15. The trial report classifies results as accepted, review, rejected, or no_changes. The temporary workspace is deleted after reporting and the original project remains unchanged.
+13. The mission trial command loads either a strict hash-checked change plan or a plan generated from built-in deterministic repair previews.
+14. Trial execution snapshots supported files once into a temporary workspace, scans that stable snapshot, applies replacements only inside the workspace, then rescans and compares static findings. It does not run shell commands or candidate project code.
+15. The trial report classifies results as accepted, review, rejected, or no_changes. The temporary workspace is deleted after reporting and the original project remains unchanged.
 
 ## Trust boundaries
 
@@ -36,7 +39,7 @@ AegisForge v0.4.1 is a local-first static security workbench, Python source mapp
 
 ## Extension points
 
-New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. New mission tools must be explicitly registered, declare their mutation behavior, and have an approval-gate test when they can change data. Trial planning must remain declarative, path-bounded, hash-checked, and unable to execute candidate code. New project-map visitors must remain bounded, AST-only, and side-effect-free. Data-flow extensions must add explicit positive and negative test cases for each new source, propagation rule, and sink.
+New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. New mission tools must be explicitly registered, declare their mutation behavior, and have an approval-gate test when they can change data. Trial planning must remain declarative, path-bounded, hash-checked, and unable to execute candidate code. Trial planning must remain declarative, path-bounded, hash-checked, and unable to execute candidate code. New project-map visitors must remain bounded, AST-only, and side-effect-free. Data-flow extensions must add explicit positive and negative test cases for each new source, propagation rule, and sink.
 
 ## Honest capability boundary
 

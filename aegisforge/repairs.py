@@ -230,7 +230,7 @@ def apply_repairs(
             raise RuntimeError("Repair verification scan was incomplete: " + "; ".join(verification.errors[:5]))
         if remaining:
             raise RuntimeError("Repair verification failed; targeted finding(s) remain: " + ", ".join(sorted(set(remaining))))
-    except (OSError, RuntimeError, UnicodeError):
+    except (OSError, RuntimeError, UnicodeError, ValueError):
         for (path, _proposal), backup in zip(validated, backups):
             if path in written:
                 shutil.copy2(backup, path)

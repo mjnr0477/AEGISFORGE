@@ -3,6 +3,7 @@ import os
 import stat
 from pathlib import Path
 from .analyzers import analyze_python, analyze_text
+from .dataflow import analyze_python_flows
 from .models import Finding, ScanResult, SEVERITY_ORDER
 
 SUPPORTED = {".py", ".pyw", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".php", ".rb", ".go", ".java", ".cs", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env", ".sh", ".bash", ".sql", ".tf", ".xml", ".properties"}
@@ -115,6 +116,7 @@ def scan_directory(target: str | Path) -> ScanResult:
             if path.suffix.lower() in {".py", ".pyw"}:
                 try:
                     findings.extend(analyze_python(source, rel))
+                    findings.extend(analyze_python_flows(source, rel))
                 except SyntaxError as exc:
                     location = f" at line {exc.lineno}" if exc.lineno else ""
                     errors.append(

@@ -14,7 +14,9 @@ def endpoint():
     eval(copied)
 '''
         findings=analyze_python_flows(source,"app.py")
-        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-001")
+        self.assertIn("source line 3",finding.message)
+        self.assertIn("eval()",finding.message)
 
     def test_tracks_asgi_query_params_into_exec(self):
         source = '''

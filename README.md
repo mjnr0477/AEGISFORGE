@@ -66,7 +66,7 @@ Minimal plan shape:
     {
       "path": "app.py",
       "expected_sha256": "64-lowercase-hex-characters-for-the-original-file",
-      "replacement": "result = user_input\\n"
+      "replacement": "result = user_input\n"
     }
   ]
 }
@@ -85,7 +85,7 @@ plan = {
     "changes": [{
         "path": "app.py",
         "expected_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-        "replacement": "result = user_input\\n",
+        "replacement": "result = user_input\n",
     }],
 }
 Path("trial.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")

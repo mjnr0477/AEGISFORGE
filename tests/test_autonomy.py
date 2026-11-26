@@ -58,6 +58,24 @@ class MissionRunnerTests(unittest.TestCase):
             self.assertIn("scan_project",[step.name for step in result.steps])
             self.assertIn("propose_repairs",[step.name for step in result.steps])
 
+    def test_mission_separates_supported_repairs_from_manual_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            (root/"settings.env").write_text("DEBUG=true\n",encoding="utf-8")
+            (root/"app.py").write_text(
+                "def endpoint():\n"
+                "    user = request.args.get('code')\n"
+                "    eval(user)\n",
+                encoding="utf-8",
+            )
+            result=run_audit_mission(root)
+            manual_ids={finding.rule_id for finding in result.manual_review_findings}
+            initial_ids={finding.rule_id for finding in result.initial_findings}
+            self.assertIn("AF-CFG-001",initial_ids)
+            self.assertIn("AF-FLOW-001",initial_ids)
+            self.assertNotIn("AF-CFG-001",manual_ids)
+            self.assertIn("AF-FLOW-001",manual_ids)
+
     def test_apply_mission_requires_explicit_flag_and_verifies_changes(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
@@ -101,6 +119,7 @@ class MissionRunnerTests(unittest.TestCase):
             self.assertEqual(payload["status"],"approval_required")
             self.assertEqual(payload["project_map"]["summary"]["modules"],1)
             self.assertEqual(payload["proposed_repairs"][0]["rule_ids"],["AF-CFG-001"])
+            self.assertIn("manual_review_findings",payload)
             self.assertEqual(payload["initial_findings"][0]["rule_id"],"AF-CFG-001")
 
     def test_project_map_warning_stops_mission_before_repair_planning(self):

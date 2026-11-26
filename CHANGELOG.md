@@ -37,3 +37,11 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Added a local security-audit mission that sequences scanning, repair proposal generation, optional approved application, and post-change verification.
 - Added CLI commands for inspecting local tools and running the audit mission.
 - Added mission-level tests for permission gating, clean projects, incomplete scans, preview-only behavior, and approved repair verification.
+
+## 0.3.0 — Python project structure map
+
+- Added a read-only AST index of Python modules, imports, classes, functions, and syntactic call sites.
+- Added the `aegisforge map` CLI command with text and JSON output.
+- Registered project mapping as a read-only local tool.
+- Changed malformed Python handling to surface explicit incomplete-analysis warnings instead of silently returning no AST findings.
+- Added tests for structural indexing, parse failures, symlink handling, resource-limit warnings, relative-only paths, and non-execution of indexed code.

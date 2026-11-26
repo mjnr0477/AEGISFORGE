@@ -71,6 +71,30 @@ def endpoint():
             result=scan_directory(root)
         self.assertIn("AF-FLOW-001",{item.rule_id for item in result.findings})
 
+    def test_does_not_flag_tainted_non_command_keyword_arguments(self):
+        source = '''
+def endpoint(cursor):
+    subprocess.run("fixed-command", shell=True, cwd=request.args.get("directory"))
+    eval("1 + 1", request.args.get("unused_globals"))
+    cursor.execute("SELECT * FROM users", {"name": request.args.get("name")})
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertEqual(findings,[])
+
+    def test_tracks_keyword_command_argument(self):
+        source = '''
+def endpoint():
+    command = request.args.get("command")
+    subprocess.run(args=command, shell=True)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_input_function_into_exec(self):
+        source = "code = input()\\nexec(code)\\n"
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+
     def test_reports_syntax_errors_to_caller(self):
         with self.assertRaises(SyntaxError):
             analyze_python_flows("def broken(:\n","broken.py")

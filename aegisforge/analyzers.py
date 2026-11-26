@@ -18,6 +18,7 @@ DEBUG_RE = re.compile(r"(?im)^\s*(?:DEBUG|debug)\s*[:=]\s*(?:true|1|yes)\b")
 PRIV_RE = re.compile(r"(?i)^\s*[\"']?privileged[\"']?\s*:\s*true\b")
 HOSTPATH_RE = re.compile(r"(?i)^\s*[\"']?hostPath[\"']?\s*:")
 DOCKER_ROOT_RE = re.compile(r"(?i)^\s*USER\s+(?:root|0)\s*(?:#.*)?$")
+ALLOW_PRIV_ESC_RE = re.compile(r"""(?i)^\s*["']?allow[_-]?privilege[_-]?escalation["']?\s*:\s*true\b""")
 
 def sanitize_evidence(value: str) -> str:
     """Remove secret values and common credential formats from report snippets."""
@@ -155,6 +156,8 @@ def analyze_text(text: str, rel_path: str) -> list[Finding]:
             findings.append(_finding("AF-CON-001", rel_path, n, 1, stripped, "high"))
         if HOSTPATH_RE.search(line):
             findings.append(_finding("AF-CON-002", rel_path, n, 1, stripped, "high"))
+        if ALLOW_PRIV_ESC_RE.search(line):
+            findings.append(_finding("AF-CON-003", rel_path, n, 1, stripped, "high"))
         if (name in {"dockerfile", "containerfile"} or suffix == ".dockerfile") and DOCKER_ROOT_RE.search(line):
             findings.append(_finding("AF-DKR-001", rel_path, n, 1, stripped, "medium"))
         for match in SECRET_RE.finditer(line):
@@ -219,6 +222,12 @@ class _PythonVisitor(ast.NodeVisitor):
             self.add("AF-PY-003", node, "high")
         if func in {"pickle.load", "pickle.loads", "_pickle.load", "_pickle.loads"}:
             self.add("AF-PY-004", node, "high")
+        if func == "yaml.unsafe_load":
+            self.add("AF-PY-007", node, "high")
+        elif func == "yaml.load":
+            safe_loader = any(k.arg == "Loader" and self._name(k.value).endswith("SafeLoader") for k in node.keywords)
+            if not safe_loader:
+                self.add("AF-PY-007", node, "high")
         if func.endswith(".execute") and node.args and isinstance(node.args[0], (ast.JoinedStr, ast.BinOp)):
             self.add("AF-PY-005", node, "medium")
         if func in {"hashlib.md5", "hashlib.sha1", "md5", "sha1"}:

@@ -26,6 +26,19 @@ class ArchiveScanTests(unittest.TestCase):
         self.assertIn("AF-PY-001",{item["rule_id"] for item in result["findings"]})
         self.assertFalse(marker.exists())
 
+    def test_scan_includes_python_project_map(self):
+        archive=make_zip([
+            ("project/main.py","from service import Service\nclass App:\n    def run(self):\n        return Service().open()\n"),
+            ("project/service.py","class Service:\n    def open(self):\n        return True\n"),
+        ])
+        result=scan_archive_bytes(archive)
+        project_map=result["project_map"]
+        self.assertEqual(project_map["operation"],"project_map")
+        self.assertEqual(project_map["summary"]["modules"],2)
+        self.assertGreaterEqual(project_map["summary"]["classes"],2)
+        self.assertEqual(project_map["modules"][0]["path"],"main.py")
+        self.assertNotIn("aegisforge-upload-",str(project_map))
+
     def test_rejects_parent_traversal_paths(self):
         archive=make_zip([("../outside.py","eval(x)\n")])
         with self.assertRaisesRegex(ValueError,"unsafe archive path"):

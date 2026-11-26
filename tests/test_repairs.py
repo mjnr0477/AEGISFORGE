@@ -74,6 +74,33 @@ class RepairTests(unittest.TestCase):
                 apply_repairs(root,[forged])
             self.assertEqual(source.read_text(encoding="utf-8"),original)
 
+    def test_rolls_back_earlier_files_when_later_source_read_becomes_invalid(self):
+        from aegisforge import repairs
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            first=root/"a.env"
+            second=root/"b.env"
+            original_first="DEBUG=true\n"
+            original_second="DEBUG=true\n"
+            first.write_text(original_first,encoding="utf-8")
+            second.write_text(original_second,encoding="utf-8")
+            proposals=propose_repairs(root)
+            real_read=repairs.read_source_file
+            calls=0
+            def fail_on_second_write_check(path, max_bytes=repairs.MAX_FILE_BYTES):
+                nonlocal calls
+                calls+=1
+                # Two reads validate the original snapshots; the third checks a.env
+                # immediately before writing; the fourth fails before b.env is written.
+                if calls==4:
+                    raise ValueError("simulated file grew beyond the read limit")
+                return real_read(path,max_bytes)
+            with patch("aegisforge.repairs.read_source_file",side_effect=fail_on_second_write_check):
+                with self.assertRaisesRegex(ValueError,"grew beyond the read limit"):
+                    apply_repairs(root,proposals)
+            self.assertEqual(first.read_text(encoding="utf-8"),original_first)
+            self.assertEqual(second.read_text(encoding="utf-8"),original_second)
+
     def test_rejects_stale_proposal(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); source=root/"config.env"

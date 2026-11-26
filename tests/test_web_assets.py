@@ -16,6 +16,12 @@ class WebAssetTests(unittest.TestCase):
         self.assertNotIn('<script src="https://',html)
         self.assertNotIn('<link rel="stylesheet" href="https://',html)
 
+    def test_local_workbench_has_project_structure_panel(self):
+        html=files("aegisforge").joinpath("web","index.html").read_text(encoding="utf-8")
+        script=files("aegisforge").joinpath("web","app.js").read_text(encoding="utf-8")
+        self.assertIn('id="projectMap"',html)
+        self.assertIn('renderProjectMap',script)
+
     def test_finding_rendering_does_not_use_inner_html(self):
         script=files("aegisforge").joinpath("web","app.js").read_text(encoding="utf-8")
         self.assertNotIn(".innerHTML",script)

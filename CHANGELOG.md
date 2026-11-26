@@ -61,3 +61,10 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Kept sinks argument-specific so untrusted values in unrelated keyword options are not treated as command/query injection.
 - Added a manual-review finding list to missions; failed or incomplete missions expose all remaining findings for human review.
 - Added regression tests for async loops, lambda boundaries, source-line provenance, framework request sources and failed mission repair review.
+
+## 0.4.2 — browser project map
+
+- Included a read-only Python structural index in local ZIP scan responses.
+- Added a browser panel for Python module, class, function, import and call-site counts, with a compact module list.
+- Preserved archive-relative source paths and replaced random temporary folder names with a neutral project label in reports.
+- Added archive-response, UI-rendering and small-screen layout checks.

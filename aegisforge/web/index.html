@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#101416">
+  <meta name="description" content="Local-first software security analysis. Your project stays on this device.">
+  <title>AegisForge — Local Security Workbench</title>
+  <link rel="stylesheet" href="/app.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="AegisForge home">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span class="brand-name">AEGIS<span>FORGE</span></span>
+    </a>
+    <div class="top-meta">
+      <span class="live-dot"></span>
+      <span>LOCAL WORKBENCH</span>
+      <span class="version" id="version">v0.1.8</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro" aria-labelledby="page-title">
+      <div class="eyebrow"><span class="eyebrow-line"></span> SOFTWARE SECURITY / FIELD LAB</div>
+      <h1 id="page-title">Find the weak seam.<br><span>Prove it. Fix it.</span></h1>
+      <p class="intro-copy">Inspect a project you own or are authorized to assess. AegisForge analyzes its source locally, records file-level evidence, and keeps your code on this device.</p>
+      <div class="trust-strip" aria-label="Processing guarantees">
+        <span><b>01</b> NO AI API</span>
+        <span><b>02</b> NO CLOUD UPLOAD</span>
+        <span><b>03</b> SOURCE NEVER EXECUTED</span>
+      </div>
+    </section>
+
+    <section class="workbench" aria-label="Local project scan">
+      <div class="workbench-main">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">01 / PROJECT INPUT</div>
+            <h2>Choose a project archive</h2>
+          </div>
+          <span class="step-state">ZIP ONLY</span>
+        </div>
+        <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Choose a project ZIP archive">
+          <input id="fileInput" type="file" accept=".zip,application/zip" hidden>
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><path d="M16 21V5m0 0-6 6m6-6 6 6M6 19v7h20v-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="drop-title">Drop your ZIP here</div>
+          <p>or <span>browse files</span> on your device</p>
+          <div class="drop-foot">Maximum archive size: 25 MB · ZIP files only</div>
+        </div>
+        <div class="file-row" id="fileRow" hidden>
+          <div class="file-icon" aria-hidden="true">ZIP</div>
+          <div class="file-meta">
+            <strong id="fileName">project.zip</strong>
+            <span id="fileSize">0 KB</span>
+          </div>
+          <button class="text-button" id="removeFile" type="button">Remove</button>
+        </div>
+
+        <div class="scan-actions">
+          <button class="button button-primary" id="scanButton" type="button" disabled>
+            <span class="button-icon" aria-hidden="true">↗</span>
+            Run local scan
+          </button>
+          <button class="button button-quiet" id="cancelButton" type="button" hidden>Cancel</button>
+        </div>
+        <div class="status-line" id="statusLine" role="status" aria-live="polite">Waiting for a project archive.</div>
+
+        <div class="scan-progress" id="progress" hidden>
+          <span class="progress-track"><span></span></span>
+          <span>Analyzing source files locally…</span>
+        </div>
+      </div>
+
+      <aside class="scope-panel">
+        <div class="eyebrow">SCAN BOUNDARY</div>
+        <h3>What happens to your code?</h3>
+        <ul class="scope-list">
+          <li><span class="scope-check">✓</span><span>ZIP is unpacked into a temporary local folder.</span></li>
+          <li><span class="scope-check">✓</span><span>Supported source and configuration files are read and analyzed.</span></li>
+          <li><span class="scope-check">✓</span><span>Python is parsed; uploaded code is never run.</span></li>
+          <li><span class="scope-check">✓</span><span>Temporary files are removed after the scan.</span></li>
+        </ul>
+        <div class="limit-note">
+          <span class="limit-mark">!</span>
+          <p>Static checks can miss issues or produce false positives. A clean scan is not a security certification.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="results" id="results" hidden aria-labelledby="results-title">
+      <div class="results-heading">
+        <div>
+          <div class="eyebrow">02 / SCAN EVIDENCE</div>
+          <h2 id="results-title">Findings</h2>
+          <p id="scanMeta" class="scan-meta"></p>
+        </div>
+        <button class="button button-outline" id="exportButton" type="button">Export JSON ↓</button>
+      </div>
+
+      <div class="summary-grid" id="summaryGrid" aria-label="Finding counts"></div>
+
+      <div class="findings-toolbar">
+        <div class="eyebrow">REVIEW FINDINGS</div>
+        <div class="filters" id="filters" aria-label="Filter findings">
+          <button type="button" class="filter active" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" class="filter" data-filter="critical" aria-pressed="false">Critical</button>
+          <button type="button" class="filter" data-filter="high" aria-pressed="false">High</button>
+          <button type="button" class="filter" data-filter="medium" aria-pressed="false">Medium</button>
+          <button type="button" class="filter" data-filter="low" aria-pressed="false">Low</button>
+        </div>
+      </div>
+      <div class="finding-list" id="findingList"></div>
+      <div class="warnings" id="warnings" hidden></div>
+    </section>
+
+    <footer class="footer">
+      <span>AEGISFORGE / LOCAL-FIRST SECURITY TOOLING</span>
+      <a href="https://github.com/mjnr0477/AEGISFORGE" target="_blank" rel="noreferrer">SOURCE REPOSITORY ↗</a>
+    </footer>
+  </main>
+</body>
+</html>

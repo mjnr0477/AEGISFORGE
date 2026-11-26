@@ -1,10 +1,10 @@
 # AegisForge
 
-**Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, tracks local baselines, prepares repairs, and sequences approved local tools. It requires no external AI API, telemetry service, or cloud model.
+**Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, builds a structural index of Python projects, tracks local baselines, prepares repairs, and sequences approved local tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.2.0
+## Current repository build: 0.3.0
 
-The repository includes static analyzers, a bounded scanner, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
+The repository includes static analyzers, a bounded scanner, a read-only Python project map, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
 
 ### Included checks
 
@@ -27,6 +27,15 @@ aegisforge scan ./path-to-your-project
 aegisforge scan ./path-to-your-project --format json --output report.json
 aegisforge scan ./path-to-your-project --format sarif --output report.sarif
 ~~~
+
+### Understand a Python project
+
+~~~bash
+aegisforge map ./my-project
+aegisforge map ./my-project --format json
+~~~
+
+The project map indexes Python modules, imports, classes, functions, and syntactic call sites. It uses the AST without importing or executing project code. If a Python file cannot be parsed, the map records a warning and returns exit code 2 rather than silently treating that file as fully analyzed. This is a structural index, not a complete semantic call graph.
 
 ### Local browser workbench
 
@@ -52,7 +61,7 @@ aegisforge mission audit ./my-project --apply-supported-repairs
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
 
-The mission runner is a deterministic local workflow engine, not a general AI model. It registers a small explicit set of tools, scans a project, prepares supported repair proposals, and pauses for approval before any file changes. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
+The mission runner is a deterministic local workflow engine, not a general AI model. It registers a small explicit set of tools, including read-only Python project mapping and security scanning, prepares supported repair proposals, and pauses for approval before any file changes. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
 
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission runs return 2 when the workflow fails or cannot complete its scan.
 
@@ -60,6 +69,7 @@ A scan returns exit code 1 when a finding meets the selected --fail-on threshold
 
 - Only scan source code and systems you own or are explicitly authorized to assess.
 - Source files are read and Python is parsed with the AST; scanned code is never imported or executed.
+- Malformed Python files are reported as incomplete AST analysis, not silently reported as clean.
 - Symlinks are rejected; individual-file, aggregate-byte, file-count, directory-count and entry-count limits bound scanning.
 - Browser uploads are accepted only by the loopback server and are never forwarded to another service.
 - The local tool registry exposes only explicit built-in tools; mutating calls require explicit approval.
@@ -80,7 +90,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13; it also
 
 ## Roadmap
 
-Next: expand deterministic engineering missions with stronger isolation, repeatable check runners, and richer evidence comparison. AegisForge is not a general autonomous intelligence or a universal system controller.
+Next: extend project understanding beyond Python syntax and expand deterministic engineering missions with stronger isolation and repeatable check runners. AegisForge is not a general autonomous intelligence or a universal system controller.
 
 ## License
 

@@ -2,16 +2,16 @@
 
 **Offline, local-first software security workbench.** AegisForge reads source code and configuration, reports evidence-backed findings, tracks local baselines, and supports a small set of preview-first repairs. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.1.8
+## Current repository build: 0.1.9
 
 The repository includes the Python package, static analyzers, bounded scanner, CLI, text/Markdown/JSON/SARIF reports, local finding baselines, verified repair previews, and a browser workbench served only on loopback.
 
 ### Included checks
 
-- Python dynamic code evaluation, shell-enabled subprocess calls, disabled TLS verification, unsafe pickle loading, formatted SQL, weak hash functions, and ordinary webhook-signature comparisons.
+- Python dynamic code evaluation, shell-enabled subprocess calls, disabled TLS verification, unsafe pickle/YAML deserialization, formatted SQL, weak hash functions, and ordinary webhook-signature comparisons.
 - Credential-like literals and private-key markers, with evidence redaction.
 - Debug configuration, wildcard CORS combined with credentials, JavaScript dynamic evaluation and innerHTML assignments.
-- Container privileged mode, hostPath mounts, Docker root user, and public SSH/RDP ingress in AWS security-group Terraform resources.
+- Container privileged mode, privilege escalation, hostPath mounts, Docker root user, and public SSH/RDP ingress in AWS security-group Terraform resources.
 
 Rules are conservative signals, not proof of exploitability. They can produce false positives and miss issues.
 

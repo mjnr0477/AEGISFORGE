@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .models import Finding, ScanResult
+from .engine import run_repair_trial
 from .project_map import ProjectMap, build_project_map
 from .repairs import RepairProposal, apply_repairs, propose_repairs
 from .scanner import scan_directory
@@ -83,6 +84,12 @@ def create_local_registry() -> ToolRegistry:
         "propose_repairs",
         "Generate supported deterministic repair previews without changing files.",
         propose_repairs,
+        mutates=False,
+    ))
+    registry.register(ActionTool(
+        "trial_repairs",
+        "Evaluate built-in repair proposals in a disposable workspace without changing project files.",
+        run_repair_trial,
         mutates=False,
     ))
     registry.register(ActionTool(

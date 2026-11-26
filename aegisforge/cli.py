@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .baselines import compare_with_baseline, create_baseline, load_baseline
-from .engine import load_plan_file, run_trial
+from .engine import load_plan_file, run_repair_trial, run_trial
 from .models import SEVERITY_ORDER
 from .reporters import to_json, to_markdown, to_sarif, to_text
 from .repairs import apply_repairs, propose_repairs
@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     trial.add_argument("target", help="Local project directory you own or are authorized to modify")
     trial.add_argument("--plan", required=True, help="UTF-8 JSON file containing hash-checked replacement operations")
     trial.add_argument("--output", help="Write the JSON trial report to this file instead of stdout")
+    repair_trial = engine_actions.add_parser("repair-trial", help="Generate and test built-in repairs without modifying the source project")
+    repair_trial.add_argument("target", help="Local project directory you own or are authorized to modify")
+    repair_trial.add_argument("--output", help="Write the JSON trial report to this file instead of stdout")
 
     server = commands.add_parser("serve", help="Open the local browser security workbench")
     server.add_argument("--host", choices=("127.0.0.1", "::1"), default="127.0.0.1")
@@ -104,13 +107,20 @@ def _run_repair(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_engine_trial(args: argparse.Namespace) -> int:
-    plan = load_plan_file(args.plan)
-    report = run_trial(args.target, plan)
-    status = _write_report(json.dumps(report, indent=2, ensure_ascii=False) + "\n", args.output)
+def _write_engine_report(report: dict, destination: str | None) -> int:
+    status = _write_report(json.dumps(report, indent=2, ensure_ascii=False) + "\n", destination)
     if status:
         return status
     return 1 if report["decision"] == "rejected" else 0
+
+
+def _run_engine_trial(args: argparse.Namespace) -> int:
+    plan = load_plan_file(args.plan)
+    return _write_engine_report(run_trial(args.target, plan), args.output)
+
+
+def _run_engine_repair_trial(args: argparse.Namespace) -> int:
+    return _write_engine_report(run_repair_trial(args.target), args.output)
 
 
 def _run_baseline_create(args: argparse.Namespace) -> int:
@@ -164,6 +174,8 @@ def main(argv=None) -> int:
             return _run_repair(args)
         if args.command == "engine" and args.engine_action == "trial":
             return _run_engine_trial(args)
+        if args.command == "engine" and args.engine_action == "repair-trial":
+            return _run_engine_repair_trial(args)
         if args.command == "baseline" and args.baseline_action == "create":
             return _run_baseline_create(args)
         if args.command == "baseline" and args.baseline_action == "compare":

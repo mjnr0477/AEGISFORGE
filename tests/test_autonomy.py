@@ -107,7 +107,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             source=root/"broken.py"
-            source.write_text("def broken(:\\n",encoding="utf-8")
+            source.write_text("def broken(:\n",encoding="utf-8")
             result=run_audit_mission(root)
             self.assertEqual(result.status,"incomplete")
             self.assertIsNotNone(result.project_map)
@@ -115,6 +115,20 @@ class MissionRunnerTests(unittest.TestCase):
             proposal_steps=[step for step in result.steps if step.name=="propose_repairs"]
             self.assertEqual(len(proposal_steps),1)
             self.assertEqual(proposal_steps[0].status,"skipped")
+
+    def test_trial_repairs_tool_is_read_only_and_preserves_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            source=root/"settings.env"
+            original="DEBUG=true\n"
+            source.write_text(original,encoding="utf-8")
+            registry=create_local_registry()
+            trial=next(item for item in registry.describe() if item["name"]=="trial_repairs")
+            self.assertFalse(trial["mutates"])
+            report=registry.call("trial_repairs",root)
+            self.assertEqual(report["decision"],"accepted")
+            self.assertFalse(report["execution"]["source_project_modified"])
+            self.assertEqual(source.read_text(encoding="utf-8"),original)
 
     def test_custom_registry_mutation_gate_is_used(self):
         registry=create_local_registry()

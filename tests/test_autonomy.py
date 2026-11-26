@@ -94,6 +94,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             (root/"settings.env").write_text("DEBUG=true\n",encoding="utf-8")
+            (root/"app.py").write_text("def greet():\n    return 'hello'\n",encoding="utf-8")
             result=run_audit_mission(root)
             payload=result.to_dict()
             self.assertEqual(payload["mission"],"local_security_audit")

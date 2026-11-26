@@ -1,9 +1,12 @@
+import contextlib
 import hashlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from aegisforge.cli import main
 from aegisforge.engine import load_plan_file, run_trial, validate_plan
 
 
@@ -99,6 +102,38 @@ class ControlledTrialTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
                 load_plan_file(path)
+
+    def test_cli_writes_json_trial_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            root = base / "project"
+            root.mkdir()
+            source = root / "app.py"
+            original = "eval(user_input)\\n"
+            source.write_text(original, encoding="utf-8")
+            plan_path = base / "trial.json"
+            plan_path.write_text(json.dumps(make_plan("app.py", original, "result = user_input\\n")), encoding="utf-8")
+            report_path = base / "report.json"
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = main(["engine", "trial", str(root), "--plan", str(plan_path), "--output", str(report_path)])
+            self.assertEqual(result, 0)
+            self.assertEqual(json.loads(report_path.read_text(encoding="utf-8"))["decision"], "accepted")
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
+    def test_cli_returns_one_for_rejected_trial(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "app.py"
+            original = "value = 1\\n"
+            source.write_text(original, encoding="utf-8")
+            plan_path = root / "trial.json"
+            plan_path.write_text(json.dumps(make_plan("app.py", original, "eval(user_input)\\n")), encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = main(["engine", "trial", str(root), "--plan", str(plan_path)])
+            self.assertEqual(result, 1)
+            self.assertIn('"decision": "rejected"', output.getvalue())
 
     def test_candidate_project_code_is_never_executed(self):
         with tempfile.TemporaryDirectory() as folder:

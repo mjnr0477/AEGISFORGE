@@ -235,10 +235,8 @@ class _PythonVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 def analyze_python(text: str, rel_path: str) -> list[Finding]:
-    try:
-        tree = ast.parse(text, filename=rel_path)
-    except (SyntaxError, ValueError):
-        return []
+    """Analyze Python syntax; parsing failures are raised to the scanner as gaps."""
+    tree = ast.parse(text, filename=rel_path)
     visitor = _PythonVisitor(rel_path, text.splitlines())
     visitor.visit(tree)
     return visitor.findings

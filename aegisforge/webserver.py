@@ -61,12 +61,16 @@ def _validate_zip_info(info: zipfile.ZipInfo) -> tuple[str, tuple[str, ...], boo
     return name, parts, is_directory
 
 def _json_result(result: Any, project_map: Any) -> dict[str, Any]:
+    structure = project_map.to_dict()
+    # The map was built in a random temporary extraction folder; do not leak
+    # that internal folder name into user-visible reports.
+    structure["project"] = "uploaded-project"
     return {
         "root": "uploaded-project",
         "scanned_files": result.scanned_files,
         "skipped_files": result.skipped_files,
         "summary": result.summary(),
-        "project_map": project_map.to_dict(),
+        "project_map": structure,
         "findings": [finding.to_dict() for finding in result.findings],
         "errors": list(result.errors),
     }

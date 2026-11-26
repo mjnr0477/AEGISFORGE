@@ -2,7 +2,7 @@
 
 **Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, tracks local baselines, prepares repairs, and sequences approved local tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.2.0
+## Current repository build: 0.2.1
 
 The repository includes static analyzers, a bounded scanner, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
 
@@ -48,13 +48,17 @@ aegisforge repair ./my-project --apply
 aegisforge tools --format json
 aegisforge mission audit ./my-project --format json
 aegisforge mission audit ./my-project --apply-supported-repairs
+aegisforge mission trial ./my-project
+aegisforge mission trial ./my-project --plan trial.json --format json
 ~~~
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
 
 The mission runner is a deterministic local workflow engine, not a general AI model. It registers a small explicit set of tools, scans a project, prepares supported repair proposals, and pauses for approval before any file changes. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
 
-A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission runs return 2 when the workflow fails or cannot complete its scan.
+Mission trials test candidate text replacements in a disposable workspace and never change the original project or execute candidate code. Without --plan, AegisForge generates a plan from its built-in conservative repair rules. With --plan, it validates a strict JSON plan containing only supported relative paths, expected SHA-256 hashes, and replacement text. Results are accepted (no new static findings), review (new lower-severity findings), rejected (new critical/high findings or incomplete candidate scan), or no_changes (no built-in repair available). Accepted changes still need human review and explicit application.
+
+A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission trial returns 1 for a rejected candidate and 2 for operational errors. Mission runs return 2 when the workflow fails or cannot complete its scan.
 
 ## Safety model
 

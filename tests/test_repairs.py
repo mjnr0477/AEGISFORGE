@@ -32,14 +32,19 @@ class RepairTests(unittest.TestCase):
             self.assertEqual(backups[0].read_text(encoding="utf-8"), original)
 
     def test_rolls_back_when_targeted_finding_remains(self):
-        from aegisforge.repairs import RepairProposal
+        from aegisforge.models import Finding, ScanResult
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); source=root/"app.py"
             original="import requests\nrequests.get(url, verify=False)\n"
             source.write_text(original, encoding="utf-8")
-            proposal=RepairProposal("app.py",("AF-PY-003",),original,original,"")
-            with self.assertRaisesRegex(RuntimeError,"verification failed"):
-                apply_repairs(root,[proposal])
+            proposals=propose_repairs(root)
+            remaining=Finding("AF-PY-003","high","TLS verification disabled",
+                "An HTTP client disables certificate verification.","app.py",2,1,
+                "requests.get(url, verify=False)","Keep verification enabled.","high","CWE-295")
+            incomplete=ScanResult(str(root),1,0,[remaining],[])
+            with patch("aegisforge.repairs.scan_directory", return_value=incomplete):
+                with self.assertRaisesRegex(RuntimeError,"verification failed"):
+                    apply_repairs(root,proposals)
             self.assertEqual(source.read_text(encoding="utf-8"),original)
             backups=list((root/".aegisforge"/"backups").rglob("app.py"))
             self.assertTrue(backups)

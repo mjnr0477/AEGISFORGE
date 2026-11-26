@@ -30,6 +30,14 @@ class AnalyzerTests(unittest.TestCase):
         self.assertNotIn("sensitive-value-123", findings[0].evidence)
         self.assertIn("***", findings[0].evidence)
 
+    def test_invalid_python_is_reported_as_incomplete_ast_analysis(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "broken.py"
+            source.write_text("def broken(:\\n    pass\\n", encoding="utf-8")
+            result = scan_directory(folder)
+            self.assertEqual(result.scanned_files, 1)
+            self.assertTrue(any("AST analysis skipped" in error for error in result.errors))
+
     def test_reports_are_machine_readable(self):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "settings.py").write_text("eval(user_input)\n")

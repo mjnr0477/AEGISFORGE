@@ -38,7 +38,7 @@ def _validate_archive_name(name: str, is_directory: bool) -> tuple[str, tuple[st
         not raw
         or len(raw) > 240
         or any(part in {"", ".", ".."} for part in parts)
-        or ":" in parts[0]
+        or any(":" in part for part in parts)
         or any(part.endswith((" ", ".")) for part in parts)
         or any(part.upper().split(".")[0] in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))} for part in parts)
     ):
@@ -95,7 +95,7 @@ def scan_archive_bytes(archive_bytes: bytes) -> dict[str, Any]:
                 if canonical in seen:
                     raise ArchiveValidationError(f"duplicate archive path: {name}")
                 seen.add(canonical)
-                if any(part in EXCLUDED for part in parts):
+                if any(part.casefold() in EXCLUDED for part in parts):
                     continue
                 if is_directory or not should_scan(Path(name)):
                     continue

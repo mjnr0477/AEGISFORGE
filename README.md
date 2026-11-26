@@ -8,10 +8,10 @@ The repository contains the Python package, static analyzers, bounded local scan
 
 ### Included checks
 
-- Python dynamic code evaluation, shell-enabled subprocess calls, disabled TLS verification, unsafe pickle loading, formatted SQL, and weak hash functions.
+- Python dynamic code evaluation, shell-enabled subprocess calls, disabled TLS verification, unsafe pickle loading, formatted SQL, weak hash functions, and ordinary webhook-signature comparisons.
 - Credential-like literals and private-key markers, with evidence redaction.
 - Debug configuration, wildcard CORS combined with credentials, JavaScript dynamic evaluation and innerHTML assignments.
-- Container privileged mode, hostPath mounts, and Docker root user.
+- Container privileged mode, hostPath mounts, Docker root user, and public SSH/RDP ingress in AWS security-group Terraform resources.
 
 Rules are conservative signals, not proof of exploitability. They can produce false positives and miss issues.
 
@@ -50,7 +50,7 @@ aegisforge --help
 
 ## Roadmap
 
-The next planned work is to bring the verified local repair, baseline, expanded infrastructure/payment checks, and local browser-console modules into this canonical GitHub repository, then add isolated patch verification. No external AI API is required for the current scope.
+The next planned work is to synchronize the verified local repair, baseline, and browser-console modules into this canonical GitHub repository, then develop an isolated engineering loop for previewing changes, running checks, and rolling back failed modifications. No external AI API is required for the current scope.
 
 ## License
 

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .autonomy import create_local_registry, run_audit_mission
 from .baselines import compare_with_baseline, create_baseline, load_baseline
 from .models import SEVERITY_ORDER
 from .reporters import to_json, to_markdown, to_sarif, to_text
@@ -34,6 +35,17 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--port", type=int, default=8765)
 
     commands.add_parser("rules", help="List checks included in this release")
+
+    tools = commands.add_parser("tools", help="List the explicitly registered local tools")
+    tools.add_argument("--format", choices=("text", "json"), default="text")
+
+    mission = commands.add_parser("mission", help="Run a deterministic local engineering mission")
+    mission_actions = mission.add_subparsers(dest="mission_action", required=True)
+    audit = mission_actions.add_parser("audit", help="Scan a project and prepare supported repair steps")
+    audit.add_argument("target", help="Local project directory you own or are authorized to modify")
+    audit.add_argument("--apply-supported-repairs", action="store_true", help="Explicitly approve built-in local file changes")
+    audit.add_argument("--backup-dir", help="Optional directory for repair backups")
+    audit.add_argument("--format", choices=("text", "json"), default="text")
 
     baseline = commands.add_parser("baseline", help="Create or compare a local finding baseline")
     actions = baseline.add_subparsers(dest="baseline_action", required=True)
@@ -91,6 +103,50 @@ def _run_repair(args: argparse.Namespace) -> int:
     print(f"\nApplied and verified {len(proposals)} file change(s). Backups: {len(backups)}")
     return 0
 
+def _run_tools(args: argparse.Namespace) -> int:
+    catalog = create_local_registry().describe()
+    if args.format == "json":
+        sys.stdout.write(json.dumps(catalog, indent=2, ensure_ascii=False) + "\n")
+    else:
+        print("AegisForge local tool catalog")
+        for item in catalog:
+            permission = "MUTATES — approval required" if item["mutates"] else "READ ONLY"
+            print(f"{item['name']:28} {permission}\n  {item['description']}")
+    return 0
+
+def _run_mission(args: argparse.Namespace) -> int:
+    result = run_audit_mission(
+        args.target,
+        apply_supported_repairs=args.apply_supported_repairs,
+        backup_dir=args.backup_dir,
+    )
+    if args.format == "json":
+        sys.stdout.write(json.dumps(result.to_dict(), indent=2, ensure_ascii=False) + "\n")
+    else:
+        print("AegisForge mission: local security audit")
+        print(f"Target: {result.target}")
+        print(f"Status: {result.status}")
+        for step in result.steps:
+            mutation = " [MUTATING]" if step.mutates else ""
+            print(f"  [{step.status.upper()}] {step.name}{mutation} — {step.detail}")
+        print(f"Initial findings: {len(result.initial_findings)}")
+        for finding in result.initial_findings:
+            print(f"  [{finding.severity.upper()}] {finding.rule_id} {finding.path}:{finding.line} — {finding.title}")
+        if result.proposed_repairs:
+            print(f"\nSupported repair proposals: {len(result.proposed_repairs)}")
+            for proposal in result.proposed_repairs:
+                print(f"\n{proposal.path} [{', '.join(proposal.rule_ids)}]")
+                sys.stdout.write(proposal.diff)
+        if result.backups:
+            print(f"\nBackups created: {len(result.backups)}")
+        if result.final_scan is not None:
+            print(f"Final findings: {len(result.final_findings)}")
+        for error in result.errors:
+            print(f"ERROR: {error}")
+        if result.status == "approval_required":
+            print("\nNo files were changed. Review proposals, then rerun with --apply-supported-repairs to authorize them.")
+    return 2 if result.status in {"failed", "incomplete"} else 0
+
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     destination = args.output or str(Path(result.root) / ".aegisforge" / "baseline.json")
@@ -131,6 +187,10 @@ def main(argv=None) -> int:
             for rule in RULES:
                 print(f"{rule.rule_id:12} {rule.severity.upper():8} {rule.title}\n             {rule.description}")
             return 0
+        if args.command == "tools":
+            return _run_tools(args)
+        if args.command == "mission" and args.mission_action == "audit":
+            return _run_mission(args)
         if args.command == "scan":
             return _run_scan(args)
         if args.command == "serve":

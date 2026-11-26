@@ -107,7 +107,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             source=root/"broken.py"
-            source.write_text("def broken(:\\n",encoding="utf-8")
+            source.write_text("def broken(:\n",encoding="utf-8")
             result=run_audit_mission(root)
             self.assertEqual(result.status,"incomplete")
             self.assertIsNotNone(result.project_map)
@@ -120,7 +120,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             source=root/"settings.env"
-            original="DEBUG=true\\n"
+            original="DEBUG=true\n"
             source.write_text(original,encoding="utf-8")
             registry=create_local_registry()
             trial=next(item for item in registry.describe() if item["name"]=="trial_repairs")

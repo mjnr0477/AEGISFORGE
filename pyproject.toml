@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegisforge"
+version = "0.1.7"
+description = "Offline, evidence-based source and configuration security analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+aegisforge = "aegisforge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aegisforge*"]

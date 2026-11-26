@@ -115,6 +115,15 @@ exec(code)
         findings=analyze_python_flows(source,"app.py")
         self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
 
+    def test_class_body_taint_does_not_leak_into_module_scope(self):
+        source = '''
+class Handler:
+    value = request.args.get("value")
+eval("constant expression")
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertEqual(findings,[])
+
     def test_reports_syntax_errors_to_caller(self):
         with self.assertRaises(SyntaxError):
             analyze_python_flows("def broken(:\n","broken.py")

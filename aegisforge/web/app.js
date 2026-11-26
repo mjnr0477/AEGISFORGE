@@ -76,6 +76,66 @@ function renderSummary(result) {
   }
 }
 
+function renderProjectMap(projectMap) {
+  const panel = byId("projectMap");
+  const stats = byId("projectMapStats");
+  const modules = byId("projectMapModules");
+  stats.replaceChildren();
+  modules.replaceChildren();
+
+  if (!projectMap || !projectMap.summary) {
+    byId("projectMapMeta").textContent = "Python structure index unavailable.";
+    stats.append(element("div", "empty-state", "No Python project map was returned."));
+    return;
+  }
+
+  const summary = projectMap.summary;
+  byId("projectMapMeta").textContent =
+    (projectMap.scanned_files || 0) + " Python files inspected · " +
+    (projectMap.warnings || []).length + " mapping warnings";
+
+  for (const [label, key] of [
+    ["Modules", "modules"],
+    ["Classes", "classes"],
+    ["Functions", "functions"],
+    ["Call sites", "calls"],
+    ["Imports", "imports"]
+  ]) {
+    const tile = element("div", "project-map-stat");
+    tile.append(element("span", "project-map-count", summary[key] || 0));
+    tile.append(element("span", "project-map-label", label));
+    stats.append(tile);
+  }
+
+  const indexed = projectMap.modules || [];
+  if (!indexed.length) {
+    modules.append(element("div", "empty-state", "No parseable Python modules were found in this archive."));
+    return;
+  }
+
+  const heading = element("div", "project-map-list-heading", "INDEXED MODULES");
+  modules.append(heading);
+  const visible = indexed.slice(0, 12);
+  for (const module of visible) {
+    const row = element("div", "project-module");
+    const name = element("strong", "project-module-name", module.path || module.module);
+    const counts = element("span", "project-module-counts",
+      (module.symbols || []).filter(item => item.kind === "class").length + " classes · " +
+      (module.symbols || []).filter(item => item.kind === "function" || item.kind === "async_function").length + " functions · " +
+      (module.calls || []).length + " calls");
+    row.append(name, counts);
+    modules.append(row);
+  }
+  if (indexed.length > visible.length) {
+    modules.append(element("div", "project-map-more",
+      "And " + (indexed.length - visible.length) + " more module(s). Export JSON for the full index."));
+  }
+  if ((projectMap.warnings || []).length) {
+    modules.append(element("div", "project-map-warning",
+      (projectMap.warnings || []).length + " module warning(s). Check the scan warnings below."));
+  }
+}
+
 function renderFinding(finding) {
   const card = element("article", "finding-card " + finding.severity);
   const top = element("div", "finding-top");
@@ -123,6 +183,7 @@ function showResult(result) {
   state.filter = "all";
   byId("scanMeta").textContent = (result.scanned_files || 0) + " files analyzed · " + (result.skipped_files || 0) + " skipped";
   renderSummary(result);
+  renderProjectMap(result.project_map);
   renderFindings();
   renderWarnings(result.errors || []);
   for (const button of byId("filters").querySelectorAll("button")) {

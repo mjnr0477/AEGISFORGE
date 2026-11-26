@@ -1,6 +1,9 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from aegisforge.dataflow import analyze_python_flows
+from aegisforge.scanner import scan_directory
 
 class PythonDataFlowTests(unittest.TestCase):
     def test_tracks_request_parameter_through_assignment_into_eval(self):
@@ -55,6 +58,18 @@ def endpoint():
         source = "eval('1 + 1')\n"
         findings=analyze_python_flows(source,"app.py")
         self.assertEqual(findings,[])
+
+    def test_directory_scan_includes_dataflow_findings(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            (root/"app.py").write_text(
+                "def endpoint():\n"
+                "    user = request.args.get('code')\n"
+                "    eval(user)\n",
+                encoding="utf-8",
+            )
+            result=scan_directory(root)
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in result.findings})
 
     def test_reports_syntax_errors_to_caller(self):
         with self.assertRaises(SyntaxError):

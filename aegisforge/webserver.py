@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .scanner import EXCLUDED, MAX_ENTRIES, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, scan_directory, should_scan
+from .project_map import build_project_map
 
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = min(MAX_ENTRIES, 10_000)
@@ -59,12 +60,13 @@ def _validate_zip_info(info: zipfile.ZipInfo) -> tuple[str, tuple[str, ...], boo
         raise ArchiveValidationError(f"encrypted ZIP entries are not supported: {name}")
     return name, parts, is_directory
 
-def _json_result(result: Any) -> dict[str, Any]:
+def _json_result(result: Any, project_map: Any) -> dict[str, Any]:
     return {
         "root": "uploaded-project",
         "scanned_files": result.scanned_files,
         "skipped_files": result.skipped_files,
         "summary": result.summary(),
+        "project_map": project_map.to_dict(),
         "findings": [finding.to_dict() for finding in result.findings],
         "errors": list(result.errors),
     }
@@ -126,7 +128,8 @@ def scan_archive_bytes(archive_bytes: bytes) -> dict[str, Any]:
                     raise ArchiveValidationError(f"ZIP entry size mismatch: {name}")
                 destination.write_bytes(content)
             result = scan_directory(root)
-            return _json_result(result)
+            project_map = build_project_map(root)
+            return _json_result(result, project_map)
 
 class AegisForgeLocalServer(ThreadingHTTPServer):
     daemon_threads = True

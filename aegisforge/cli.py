@@ -182,6 +182,10 @@ def _run_mission(args: argparse.Namespace) -> int:
                 sys.stdout.write(proposal.diff)
         if result.backups:
             print(f"\nBackups created: {len(result.backups)}")
+        if result.manual_review_findings:
+            print(f"\nManual review required: {len(result.manual_review_findings)} finding(s)")
+            for finding in result.manual_review_findings:
+                print(f"  [{finding.severity.upper()}] {finding.rule_id} {finding.path}:{finding.line} — {finding.title}")
         if result.final_scan is not None:
             print(f"Final findings: {len(result.final_findings)}")
         for error in result.errors:

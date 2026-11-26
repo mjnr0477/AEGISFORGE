@@ -265,3 +265,63 @@ def run_trial(target: str | Path, plan: dict[str, Any]) -> dict[str, Any]:
                 "A human must review and apply any accepted change to the original project.",
             ],
         }
+
+
+def build_repair_plan(target: str | Path) -> dict[str, Any] | None:
+    """Turn built-in preview-only repairs into a hash-checked trial plan."""
+    from .repairs import propose_repairs
+
+    requested_root = Path(target).expanduser()
+    if requested_root.is_symlink():
+        raise ValueError("target root must not be a symlink")
+    root = requested_root.resolve()
+    if not root.is_dir():
+        raise NotADirectoryError(f"target must be a directory: {root}")
+
+    proposals = propose_repairs(root)
+    if not proposals:
+        return None
+
+    changes: list[dict[str, str]] = []
+    for proposal in proposals:
+        relative = _safe_relative_path(proposal.path)
+        source_path = root.joinpath(*PurePosixPath(relative).parts)
+        raw = _read_regular_bytes(source_path, MAX_FILE_BYTES)
+        try:
+            original = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"repair source is not valid UTF-8 text: {relative}") from exc
+        if original != proposal.original:
+            raise ValueError(f"source changed after repair preview: {relative}")
+        changes.append({
+            "path": relative,
+            "expected_sha256": hashlib.sha256(raw).hexdigest(),
+            "replacement": proposal.replacement,
+        })
+    return validate_plan({"schema_version": PLAN_SCHEMA_VERSION, "changes": changes})
+
+
+def run_repair_trial(target: str | Path) -> dict[str, Any]:
+    """Generate built-in conservative repairs and test them without applying them."""
+    root = Path(target).expanduser()
+    plan = build_repair_plan(root)
+    if plan is None:
+        return {
+            "tool": "AegisForge",
+            "engine": "guided-repair-trial",
+            "schema_version": 1,
+            "decision": "no_changes",
+            "reason": "no supported built-in repair proposals were found",
+            "target": str(root.resolve()),
+            "changed_files": [],
+            "execution": {
+                "project_code_executed": False,
+                "shell_commands_executed": [],
+                "source_project_modified": False,
+                "workspace": "no trial workspace was needed",
+            },
+        }
+    report = run_trial(root, plan)
+    report["engine"] = "guided-repair-trial"
+    report["planner"] = "built-in conservative repair rules; no external AI model"
+    return report

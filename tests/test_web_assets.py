@@ -1,4 +1,5 @@
 import unittest
+from aegisforge import __version__
 from importlib.resources import files
 
 class WebAssetTests(unittest.TestCase):
@@ -8,6 +9,10 @@ class WebAssetTests(unittest.TestCase):
             with self.subTest(asset=name):
                 resource=package.joinpath("web",name)
                 self.assertTrue(resource.is_file(),f"missing package asset: {name}")
+
+    def test_browser_version_matches_python_package(self):
+        html=files("aegisforge").joinpath("web","index.html").read_text(encoding="utf-8")
+        self.assertIn(f'id="version">v{__version__}</span>',html)
 
     def test_html_uses_same_origin_assets(self):
         html=files("aegisforge").joinpath("web","index.html").read_text(encoding="utf-8")

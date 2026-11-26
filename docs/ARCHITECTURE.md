@@ -15,6 +15,7 @@ AegisForge v0.1.10 is a local-first static security workbench. It has no externa
 9. The controlled engineering trial engine accepts a strict JSON plan containing only relative paths, expected SHA-256 hashes, and replacement text. It rejects duplicate keys, duplicate paths, unsupported files, stale hashes, traversal paths, and oversized plans.
 10. The engine takes a bounded byte snapshot of supported source files, builds baseline and candidate copies in a temporary directory, and scans both copies with the same static rules. It compares rule, severity, path, and redacted evidence; line/column shifts alone do not count as new findings.
 11. The trial report classifies a candidate as accepted when no new findings are detected, review when new lower-severity findings appear, or rejected when new critical/high findings or candidate scan errors appear. The temporary workspace is removed after the report is produced.
+12. The guided repair trial can request the existing deterministic repair preview rules, convert their proposed replacements into a hash-checked plan, and send that plan through the same trial gate. It never applies the plan to the original project.
 
 ## Trust boundaries
 
@@ -32,4 +33,4 @@ AegisForge v0.1.10 is a local-first static security workbench. It has no externa
 
 ## Extension points
 
-New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. Future engineering planners may propose plans, but the deterministic trial engine remains the gate that checks scope, hashes, static results, and review status.
+New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. The guided repair planner is deterministic and only uses built-in conservative repair rules; it is not an autonomous AI model. Future engineering planners may propose plans, but the deterministic trial engine remains the gate that checks scope, hashes, static results, and review status.

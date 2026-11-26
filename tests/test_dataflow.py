@@ -16,6 +16,24 @@ def endpoint():
         findings=analyze_python_flows(source,"app.py")
         self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
 
+    def test_tracks_asgi_query_params_into_exec(self):
+        source = '''
+def endpoint(request):
+    payload = request.query_params.get("code")
+    exec(payload)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+
+    def test_tracks_django_post_data_into_shell_command(self):
+        source = '''
+def endpoint(request):
+    command = request.POST.get("command")
+    os.system(command)
+'''
+        findings=analyze_python_flows(source,"views.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
     def test_tracks_aliased_flask_request_into_shell_command(self):
         source = '''
 from flask import request as req

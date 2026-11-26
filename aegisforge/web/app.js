@@ -77,7 +77,6 @@ function renderSummary(result) {
 }
 
 function renderProjectMap(projectMap) {
-  const panel = byId("projectMap");
   const stats = byId("projectMapStats");
   const modules = byId("projectMapModules");
   stats.replaceChildren();

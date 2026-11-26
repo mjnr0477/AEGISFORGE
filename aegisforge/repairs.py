@@ -149,7 +149,7 @@ def apply_repairs(
     for proposal in proposals:
         relative = PurePosixPath(proposal.path)
         if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts) or "\\" in proposal.path:
-            raise RuntimeError(f"Repair proposal path must be a safe relative path: {proposal.path}")
+            raise RuntimeError(f"Repair proposal path must be relative and safe: {proposal.path}")
         normalized = relative.as_posix()
         if normalized in seen_paths:
             raise RuntimeError(f"Duplicate repair proposal path: {proposal.path}")

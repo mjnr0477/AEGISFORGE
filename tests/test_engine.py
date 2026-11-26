@@ -139,7 +139,7 @@ class ControlledTrialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "config.env"
-            original = "DEBUG=true\\n"
+            original = "DEBUG=true\n"
             source.write_text(original, encoding="utf-8")
 
             report = run_repair_trial(root)
@@ -154,19 +154,19 @@ class ControlledTrialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "plain.py"
-            source.write_text("value = 1\\n", encoding="utf-8")
+            source.write_text("value = 1\n", encoding="utf-8")
 
             report = run_repair_trial(root)
 
             self.assertEqual(report["decision"], "no_changes")
             self.assertFalse(report["execution"]["source_project_modified"])
-            self.assertEqual(source.read_text(encoding="utf-8"), "value = 1\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "value = 1\n")
 
     def test_guided_repair_trial_cli_writes_report(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "config.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             report_path = root / "trial.json"
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -174,7 +174,7 @@ class ControlledTrialTests(unittest.TestCase):
             self.assertEqual(result, 0)
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["decision"], "accepted")
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
 
     def test_candidate_project_code_is_never_executed(self):
         with tempfile.TemporaryDirectory() as folder:

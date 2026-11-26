@@ -172,24 +172,29 @@ class _FlowVisitor(ast.NodeVisitor):
         self._assign_target(node.target, self._is_tainted(node.iter))
         self.generic_visit(node)
 
+    def _first_argument_is_tainted(self, node: ast.Call, keyword_names: tuple[str, ...] = ()) -> bool:
+        if node.args:
+            return self._is_tainted(node.args[0])
+        return any(
+            keyword.arg in keyword_names and self._is_tainted(keyword.value)
+            for keyword in node.keywords
+        )
+
     def visit_Call(self, node: ast.Call) -> None:
         function = self._canonical_name(node.func)
-        positional_tainted = any(self._is_tainted(argument) for argument in node.args)
-        keyword_tainted = any(self._is_tainted(keyword.value) for keyword in node.keywords)
-        arguments_tainted = positional_tainted or keyword_tainted
 
-        if function in DYNAMIC_SINKS and arguments_tainted:
+        if function in DYNAMIC_SINKS and self._first_argument_is_tainted(node, ("source",)):
             self._add("AF-FLOW-001", node, f"{function}()")
         elif function in SUBPROCESS_SINKS:
             shell_enabled = any(
                 item.arg == "shell" and isinstance(item.value, ast.Constant) and item.value.value is True
                 for item in node.keywords
             )
-            if shell_enabled and arguments_tainted:
+            if shell_enabled and self._first_argument_is_tainted(node, ("args",)):
                 self._add("AF-FLOW-002", node, f"{function}(shell=True)")
-        elif function in SHELL_COMMAND_SINKS and arguments_tainted:
+        elif function in SHELL_COMMAND_SINKS and self._first_argument_is_tainted(node):
             self._add("AF-FLOW-002", node, f"{function}()")
-        elif function.endswith(".execute") and node.args and self._is_tainted(node.args[0]):
+        elif function.endswith(".execute") and self._first_argument_is_tainted(node, ("operation",)):
             self._add("AF-FLOW-003", node, f"{function}() query text")
 
         self.generic_visit(node)

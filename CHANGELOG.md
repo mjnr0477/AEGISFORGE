@@ -14,3 +14,18 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Added detection of direct webhook-signature equality and public SSH/RDP ingress in AWS security-group Terraform.
 - Added vulnerable/hardened webhook fixtures and IPv6/comment-boundary regression tests.
 - Updated package metadata to a current SPDX license declaration.
+
+## 0.1.8 — local workbench
+
+- Added a responsive local browser workbench with ZIP upload, severity filters, evidence cards and JSON report export.
+- Added a loopback-only server restricted to 127.0.0.1 or ::1 with same-origin request validation and security headers.
+- Added ZIP validation for traversal, absolute paths, duplicate paths, symlinks, special files, encrypted entries, compression ratio and extraction limits.
+- Added local finding baselines with integrity-checked fingerprints and new/known/resolved comparison.
+- Added preview-first repairs with backups, stale-file checks, post-scan verification and rollback.
+- Added end-to-end tests for CLI, archive handling, upload security and repairs.
+
+## 0.1.9 — additional security rules
+
+- Added detection of unsafe PyYAML load/unsafe_load calls while allowing SafeLoader and safe_load.
+- Added detection of container configurations that enable privilege escalation.
+- Added positive and negative regression tests for both rules.

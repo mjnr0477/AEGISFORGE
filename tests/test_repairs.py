@@ -45,6 +45,30 @@ class RepairTests(unittest.TestCase):
             self.assertTrue(backups)
             self.assertEqual(backups[0].read_text(encoding="utf-8"),original)
 
+    def test_rejects_handcrafted_replacement_not_generated_by_a_supported_rule(self):
+        from aegisforge.repairs import RepairProposal
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); source=root/"config.env"
+            original="DEBUG=true\n"; source.write_text(original,encoding="utf-8")
+            preview=propose_repairs(root)[0]
+            forged=RepairProposal(preview.path,preview.rule_ids,preview.original,
+                "ATTACKER_CONTROLLED=true\n",preview.diff)
+            with self.assertRaisesRegex(RuntimeError,"not a supported deterministic repair"):
+                apply_repairs(root,[forged])
+            self.assertEqual(source.read_text(encoding="utf-8"),original)
+
+    def test_rejects_noncanonical_repair_path(self):
+        from aegisforge.repairs import RepairProposal
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); source=root/"config.env"
+            original="DEBUG=true\n"; source.write_text(original,encoding="utf-8")
+            preview=propose_repairs(root)[0]
+            forged=RepairProposal("./"+preview.path,preview.rule_ids,preview.original,
+                preview.replacement,preview.diff)
+            with self.assertRaisesRegex(RuntimeError,"canonical relative path"):
+                apply_repairs(root,[forged])
+            self.assertEqual(source.read_text(encoding="utf-8"),original)
+
     def test_rejects_stale_proposal(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); source=root/"config.env"

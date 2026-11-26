@@ -10,3 +10,7 @@
 - Added unit tests and GitHub Actions coverage for Python 3.10–3.13.
 
 This repository bootstrap is a focused source baseline. Additional modules from the local development release (repair, baselines, infrastructure-specific checks, and local browser console) are scheduled for synchronization and separate verification before they are declared part of the canonical GitHub release.
+
+- Added detection of direct webhook-signature equality and public SSH/RDP ingress in AWS security-group Terraform.
+- Added vulnerable/hardened webhook fixtures and IPv6/comment-boundary regression tests.
+- Updated package metadata to a current SPDX license declaration.

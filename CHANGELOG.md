@@ -45,3 +45,10 @@ This repository bootstrap is a focused source baseline. Additional modules from 
 - Registered project mapping as a read-only local tool.
 - Changed malformed Python handling to surface explicit incomplete-analysis warnings instead of silently returning no AST findings.
 - Added tests for structural indexing, parse failures, symlink handling, resource-limit warnings, relative-only paths, and non-execution of indexed code.
+
+## 0.4.0 — conservative Python source-to-sink analysis
+
+- Added bounded intra-function taint propagation from common Flask request expressions, `input()`, and `sys.argv` through local variable assignments.
+- Added candidate findings when tainted values reach `eval`/`exec`, shell-enabled subprocess calls, or SQL query text passed to `execute()`.
+- Added negative tests for parameterized SQL values, unused input, and constant expressions.
+- Documented analysis limits: no interprocedural flow, complete sanitizer reasoning, or universal framework coverage.

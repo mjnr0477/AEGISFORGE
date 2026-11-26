@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from aegisforge.cli import main
-from aegisforge.engine import load_plan_file, run_trial, validate_plan
+from aegisforge.engine import load_plan_file, run_repair_trial, run_trial, validate_plan
 
 
 def make_plan(path: str, original: str, replacement: str) -> dict:
@@ -134,6 +134,47 @@ class ControlledTrialTests(unittest.TestCase):
                 result = main(["engine", "trial", str(root), "--plan", str(plan_path)])
             self.assertEqual(result, 1)
             self.assertIn('"decision": "rejected"', output.getvalue())
+
+    def test_guided_repair_trial_tests_fix_without_modifying_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "config.env"
+            original = "DEBUG=true\\n"
+            source.write_text(original, encoding="utf-8")
+
+            report = run_repair_trial(root)
+
+            self.assertEqual(report["engine"], "guided-repair-trial")
+            self.assertEqual(report["decision"], "accepted")
+            self.assertEqual(report["resolved_findings"][0]["rule_id"], "AF-CFG-001")
+            self.assertFalse(report["execution"]["source_project_modified"])
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
+    def test_guided_repair_trial_reports_no_changes_when_no_builtin_fix_exists(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "plain.py"
+            source.write_text("value = 1\\n", encoding="utf-8")
+
+            report = run_repair_trial(root)
+
+            self.assertEqual(report["decision"], "no_changes")
+            self.assertFalse(report["execution"]["source_project_modified"])
+            self.assertEqual(source.read_text(encoding="utf-8"), "value = 1\\n")
+
+    def test_guided_repair_trial_cli_writes_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "config.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            report_path = root / "trial.json"
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = main(["engine", "repair-trial", str(root), "--output", str(report_path)])
+            self.assertEqual(result, 0)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["decision"], "accepted")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
 
     def test_candidate_project_code_is_never_executed(self):
         with tempfile.TemporaryDirectory() as folder:

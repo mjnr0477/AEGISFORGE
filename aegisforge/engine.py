@@ -224,7 +224,7 @@ def run_trial(target: str | Path, plan: dict[str, Any]) -> dict[str, Any]:
             destination = candidate_workspace.joinpath(*PurePosixPath(change["path"]).parts)
             destination.write_bytes(change["replacement"].encode("utf-8"))
 
-        candidate = scan_directory(workspace)
+        candidate = scan_directory(candidate_workspace)
         introduced, resolved = _finding_delta(baseline.findings, candidate.findings)
 
         introduced_blockers = [

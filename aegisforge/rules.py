@@ -19,5 +19,7 @@ RULES = [
     Rule("AF-DKR-001", "Docker runs as root", "medium", "A Dockerfile explicitly selects root as runtime user.", "Create a dedicated unprivileged user and select it with USER.", "CWE-250"),
     Rule("AF-TF-001", "Public remote-administration ingress", "high", "A Terraform AWS security-group ingress rule exposes SSH or RDP to all IPv4 or IPv6 addresses.", "Restrict administrative access to a trusted CIDR, VPN, bastion, or identity-aware access path.", "CWE-284"),
     Rule("AF-PAY-001", "Non-constant-time webhook signature comparison", "medium", "A received webhook signature appears to be compared with an expected signature using ordinary equality.", "Use hmac.compare_digest over the exact raw request-body signature before trusting payment or webhook fields.", "CWE-208"),
+    Rule("AF-PY-007", "Unsafe YAML deserialization", "high", "PyYAML load/unsafe_load is used without a SafeLoader.", "Use yaml.safe_load() or pass yaml.SafeLoader explicitly; never deserialize untrusted YAML with an unsafe loader.", "CWE-502"),
+    Rule("AF-CON-003", "Container privilege escalation allowed", "high", "A container configuration allows processes to gain additional privileges.", "Set allowPrivilegeEscalation to false and drop unnecessary Linux capabilities.", "CWE-250"),
 ]
 RULE_MAP = {item.rule_id: item for item in RULES}

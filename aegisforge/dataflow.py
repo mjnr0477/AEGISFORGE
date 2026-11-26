@@ -48,6 +48,7 @@ class _FlowVisitor(ast.NodeVisitor):
         self.path = path
         self.lines = source.splitlines()
         self.tainted_names: set[str] = set()
+        self.taint_sources: dict[str, set[int]] = {}
         self.aliases: dict[str, str] = {}
         self.scope: list[str] = []
         self.findings: list[Finding] = []
@@ -74,39 +75,60 @@ class _FlowVisitor(ast.NodeVisitor):
     def _is_source_name(self, name: str) -> bool:
         return any(name == prefix or name.startswith(prefix + ".") for prefix in SOURCE_PREFIXES)
 
-    def _is_tainted(self, node: ast.AST | None) -> bool:
-        if node is None:
-            return False
+    def _taint_origins(self, node: ast.AST | None) -> set[int]:
+        """Return source line numbers that can reach this expression."""
+        if node is None or isinstance(node, ast.Lambda):
+            # A lambda body is evaluated only when invoked, not when assigned.
+            # Sinks inside the body are still visited independently by NodeVisitor.
+            return set()
         if isinstance(node, ast.Name):
-            return node.id in self.tainted_names
+            return set(self.taint_sources.get(node.id, set()))
         if isinstance(node, ast.Attribute):
-            return self._is_source_name(self._canonical_name(node))
+            if self._is_source_name(self._canonical_name(node)):
+                return {max(1, getattr(node, "lineno", 1))}
+            return self._taint_origins(node.value)
         if isinstance(node, ast.Call):
             function = self._canonical_name(node.func)
             if function in SOURCE_CALLS or self._is_source_name(function):
-                return True
-            if any(self._is_tainted(argument) for argument in node.args):
-                return True
-            return any(self._is_tainted(keyword.value) for keyword in node.keywords)
-        return any(self._is_tainted(child) for child in ast.iter_child_nodes(node))
+                return {max(1, getattr(node, "lineno", 1))}
+        if isinstance(node, ast.Lambda):
+            # The callable is not tainted merely because its body reads untrusted input.
+            return set()
+        origins: set[int] = set()
+        for child in ast.iter_child_nodes(node):
+            origins.update(self._taint_origins(child))
+        return origins
 
-    def _assign_target(self, target: ast.AST, is_tainted: bool) -> None:
+    def _is_tainted(self, node: ast.AST | None) -> bool:
+        return bool(self._taint_origins(node))
+
+    def _assign_target(self, target: ast.AST, origins: set[int]) -> None:
         if isinstance(target, ast.Name):
-            if is_tainted:
+            if origins:
                 self.tainted_names.add(target.id)
+                self.taint_sources[target.id] = set(origins)
             else:
                 self.tainted_names.discard(target.id)
+                self.taint_sources.pop(target.id, None)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for item in target.elts:
-                self._assign_target(item, is_tainted)
+                self._assign_target(item, origins)
 
-    def _add(self, rule_id: str, node: ast.AST, sink_name: str, confidence: str = "medium") -> None:
+    def _add(
+        self,
+        rule_id: str,
+        node: ast.AST,
+        sink_name: str,
+        source_lines: set[int],
+        confidence: str = "medium",
+    ) -> None:
         rule = RULE_MAP[rule_id]
         line_number = max(1, getattr(node, "lineno", 1))
         evidence = self.lines[line_number - 1].strip() if line_number <= len(self.lines) else "source expression"
         evidence = sanitize_evidence(evidence)
         caller = ".".join(self.scope) or "module scope"
-        message = f"A value derived from request or interactive input reaches {sink_name} in {caller}."
+        source_refs = ", ".join(str(item) for item in sorted(source_lines))
+        message = f"Potential flow from input source line {source_refs} to {sink_name} in {caller}."
         self.findings.append(Finding(
             rule_id=rule.rule_id,
             severity=rule.severity,
@@ -134,76 +156,104 @@ class _FlowVisitor(ast.NodeVisitor):
                 self.aliases[item.asname or item.name] = "request"
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
         self.tainted_names = set()
+        self.taint_sources = {}
         self.scope.append(node.name)
         self.generic_visit(node)
         self.scope.pop()
         self.tainted_names = previous_taint
+        self.taint_sources = previous_sources
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
+        self.tainted_names = set()
+        self.taint_sources = {}
+        self.scope.append(node.name)
+        self.generic_visit(node)
+        self.scope.pop()
+        self.tainted_names = previous_taint
+        self.taint_sources = previous_sources
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
         self.tainted_names = set()
+        self.taint_sources = {}
         self.scope.append(node.name)
         self.generic_visit(node)
         self.scope.pop()
         self.tainted_names = previous_taint
+        self.taint_sources = previous_sources
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
         self.tainted_names = set()
+        self.taint_sources = {}
         self.generic_visit(node)
         self.tainted_names = previous_taint
+        self.taint_sources = previous_sources
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        tainted = self._is_tainted(node.value)
+        origins = self._taint_origins(node.value)
         for target in node.targets:
-            self._assign_target(target, tainted)
+            self._assign_target(target, origins)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        tainted = self._is_tainted(node.value)
-        self._assign_target(node.target, tainted)
+        origins = self._taint_origins(node.value)
+        self._assign_target(node.target, origins)
         self.generic_visit(node)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        tainted = self._is_tainted(node.target) or self._is_tainted(node.value)
-        self._assign_target(node.target, tainted)
+        origins = self._taint_origins(node.target) | self._taint_origins(node.value)
+        self._assign_target(node.target, origins)
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> None:
-        self._assign_target(node.target, self._is_tainted(node.iter))
+        self._assign_target(node.target, self._taint_origins(node.iter))
         self.generic_visit(node)
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self._assign_target(node.target, self._is_tainted(node.iter))
+        self._assign_target(node.target, self._taint_origins(node.iter))
         self.generic_visit(node)
 
-    def _first_argument_is_tainted(self, node: ast.Call, keyword_names: tuple[str, ...] = ()) -> bool:
+    def _first_argument_origins(self, node: ast.Call, keyword_names: tuple[str, ...] = ()) -> set[int]:
         if node.args:
-            return self._is_tainted(node.args[0])
-        return any(
-            keyword.arg in keyword_names and self._is_tainted(keyword.value)
-            for keyword in node.keywords
-        )
+            return self._taint_origins(node.args[0])
+        origins: set[int] = set()
+        for keyword in node.keywords:
+            if keyword.arg in keyword_names:
+                origins.update(self._taint_origins(keyword.value))
+        return origins
 
     def visit_Call(self, node: ast.Call) -> None:
         function = self._canonical_name(node.func)
 
-        if function in DYNAMIC_SINKS and self._first_argument_is_tainted(node, ("source",)):
-            self._add("AF-FLOW-001", node, f"{function}()")
+        if function in DYNAMIC_SINKS:
+            origins = self._first_argument_origins(node, ("source",))
+            if origins:
+                self._add("AF-FLOW-001", node, f"{function}()", origins)
         elif function in SUBPROCESS_SINKS:
             shell_enabled = any(
                 item.arg == "shell" and isinstance(item.value, ast.Constant) and item.value.value is True
                 for item in node.keywords
             )
-            if shell_enabled and self._first_argument_is_tainted(node, ("args",)):
-                self._add("AF-FLOW-002", node, f"{function}(shell=True)")
-        elif function in SHELL_COMMAND_SINKS and self._first_argument_is_tainted(node):
-            self._add("AF-FLOW-002", node, f"{function}()")
-        elif function.endswith(".execute") and self._first_argument_is_tainted(node, ("operation",)):
-            self._add("AF-FLOW-003", node, f"{function}() query text")
+            origins = self._first_argument_origins(node, ("args",))
+            if shell_enabled and origins:
+                self._add("AF-FLOW-002", node, f"{function}(shell=True)", origins)
+        elif function in SHELL_COMMAND_SINKS:
+            origins = self._first_argument_origins(node)
+            if origins:
+                self._add("AF-FLOW-002", node, f"{function}()", origins)
+        elif function.endswith(".execute"):
+            origins = self._first_argument_origins(node, ("operation",))
+            if origins:
+                self._add("AF-FLOW-003", node, f"{function}() query text", origins)
 
         self.generic_visit(node)
 

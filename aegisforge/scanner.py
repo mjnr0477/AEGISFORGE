@@ -113,7 +113,13 @@ def scan_directory(target: str | Path) -> ScanResult:
             scanned += 1
             findings.extend(analyze_text(source, rel))
             if path.suffix.lower() in {".py", ".pyw"}:
-                findings.extend(analyze_python(source, rel))
+                try:
+                    findings.extend(analyze_python(source, rel))
+                except SyntaxError as exc:
+                    location = f" at line {exc.lineno}" if exc.lineno else ""
+                    errors.append(
+                        f"{rel}: Python syntax error{location}; AST analysis skipped: {exc.msg}"
+                    )
         except (OSError, ValueError) as exc:
             skipped += 1
             errors.append(f"{path}: {exc}")

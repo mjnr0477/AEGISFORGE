@@ -162,6 +162,13 @@ def _run_mission(args: argparse.Namespace) -> int:
         print("AegisForge mission: local security audit")
         print(f"Target: {result.target}")
         print(f"Status: {result.status}")
+        if result.project_map is not None:
+            mapped = result.project_map.summary
+            print(
+                "Project map: "
+                f"{mapped['modules']} modules, {mapped['classes']} classes, "
+                f"{mapped['functions']} functions, {mapped['calls']} call sites"
+            )
         for step in result.steps:
             mutation = " [MUTATING]" if step.mutates else ""
             print(f"  [{step.status.upper()}] {step.name}{mutation} — {step.detail}")

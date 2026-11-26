@@ -116,7 +116,7 @@ class ControlledTrialTests(unittest.TestCase):
             report_path = base / "report.json"
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = main(["engine", "trial", str(root), "--plan", str(plan_path), "--output", str(report_path)])
+                result = main(["mission", "trial", str(root), "--plan", str(plan_path), "--format", "json", "--output", str(report_path)])
             self.assertEqual(result, 0)
             self.assertEqual(json.loads(report_path.read_text(encoding="utf-8"))["decision"], "accepted")
             self.assertEqual(source.read_text(encoding="utf-8"), original)
@@ -131,7 +131,7 @@ class ControlledTrialTests(unittest.TestCase):
             plan_path.write_text(json.dumps(make_plan("app.py", original, "eval(user_input)\n")), encoding="utf-8")
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = main(["engine", "trial", str(root), "--plan", str(plan_path)])
+                result = main(["mission", "trial", str(root), "--plan", str(plan_path), "--format", "json"])
             self.assertEqual(result, 1)
             self.assertIn('"decision": "rejected"', output.getvalue())
 
@@ -170,7 +170,7 @@ class ControlledTrialTests(unittest.TestCase):
             report_path = root / "trial.json"
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = main(["engine", "repair-trial", str(root), "--output", str(report_path)])
+                result = main(["mission", "trial", str(root), "--format", "json", "--output", str(report_path)])
             self.assertEqual(result, 0)
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["decision"], "accepted")

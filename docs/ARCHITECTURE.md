@@ -14,7 +14,7 @@ AegisForge v0.2.1 is a local-first static security workbench and deterministic m
 8. The browser workbench accepts a ZIP only from a same-origin loopback request. It validates archive member names, types, compression ratio, count and size limits; extracts only supported source/configuration files to a temporary directory; scans them without executing them; returns the report; and deletes the temporary directory.
 9. The mission runner uses an explicit registry of built-in local tools. Each tool declares whether it mutates project data. The runner performs a scan, prepares supported repair proposals, pauses in an approval-required state by default, and only calls the mutating repair tool when the user supplies the explicit approval flag. A fresh scan verifies the outcome.
 10. The mission trial command loads either a strict hash-checked change plan or a plan generated from the built-in deterministic repair previews.
-11. Trial execution snapshots supported files, creates separate baseline and candidate copies in a temporary directory, applies replacements only to the candidate, and compares static findings. It does not run shell commands or candidate project code.
+11. Trial execution snapshots supported files once into a temporary workspace, scans that stable snapshot, applies replacements only inside the workspace, then rescans and compares static findings. It does not run shell commands or candidate project code.
 12. The trial report classifies results as accepted, review, rejected, or no_changes and deletes the temporary workspace after producing the report. The original project remains unchanged.
 
 ## Trust boundaries

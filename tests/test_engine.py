@@ -77,6 +77,8 @@ class ControlledTrialTests(unittest.TestCase):
     def test_rejects_traversal_and_duplicate_paths(self):
         with self.assertRaisesRegex(ValueError, "unsafe change path"):
             validate_plan(make_plan("../outside.py", "x = 1\n", "x = 2\n"))
+        with self.assertRaisesRegex(ValueError, "non-empty relative POSIX path"):
+            validate_plan(make_plan("nested/app.py:Zone.Identifier", "x = 1\\n", "x = 2\\n"))
         plan = {
             "schema_version": 1,
             "changes": [

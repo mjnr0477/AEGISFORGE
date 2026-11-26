@@ -126,6 +126,33 @@ eval("constant expression")
         findings=analyze_python_flows(source,"app.py")
         self.assertEqual(findings,[])
 
+    def test_tracks_async_iteration_source_with_provenance(self):
+        source = '''
+async def endpoint():
+    async for item in request.values:
+        eval(item)
+'''
+        findings = analyze_python_flows(source, "app.py")
+        finding = next(item for item in findings if item.rule_id == "AF-FLOW-001")
+        self.assertIn("source line 3", finding.message)
+
+    def test_lambda_returning_input_is_not_itself_tainted(self):
+        source = '''
+def endpoint():
+    callback = lambda: request.args.get("code")
+    eval(callback)
+'''
+        findings = analyze_python_flows(source, "app.py")
+        self.assertNotIn("AF-FLOW-001", {item.rule_id for item in findings})
+
+    def test_sink_inside_lambda_is_still_analyzed(self):
+        source = '''
+def endpoint():
+    callback = lambda: eval(request.args.get("code"))
+'''
+        findings = analyze_python_flows(source, "app.py")
+        self.assertIn("AF-FLOW-001", {item.rule_id for item in findings})
+
     def test_reports_syntax_errors_to_caller(self):
         with self.assertRaises(SyntaxError):
             analyze_python_flows("def broken(:\n","broken.py")

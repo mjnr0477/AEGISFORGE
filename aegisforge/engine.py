@@ -85,7 +85,7 @@ def load_plan_file(path: str | Path) -> dict[str, Any]:
 
 
 def _safe_relative_path(value: Any) -> str:
-    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value:
+    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value or ":" in value:
         raise ValueError("change path must be a non-empty relative POSIX path")
     if any(ord(char) < 32 for char in value):
         raise ValueError("change path contains a control character")
@@ -95,7 +95,6 @@ def _safe_relative_path(value: Any) -> str:
         or not relative.parts
         or relative.as_posix() != value
         or any(part in {"", ".", ".."} for part in relative.parts)
-        or ":" in relative.parts[0]
     ):
         raise ValueError(f"unsafe change path: {value}")
     return value
@@ -200,31 +199,24 @@ def run_trial(target: str | Path, plan: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"stale change plan for {relative}: expected source SHA-256 does not match")
 
     with tempfile.TemporaryDirectory(prefix="aegisforge-trial-") as temporary:
-        workspace_root = Path(temporary)
-        baseline_workspace = workspace_root / "baseline"
-        candidate_workspace = workspace_root / "candidate"
-        baseline_workspace.mkdir(mode=0o700)
-        candidate_workspace.mkdir(mode=0o700)
+        workspace = Path(temporary) / "snapshot"
+        workspace.mkdir(mode=0o700)
 
-        # Both scans derive from the exact same byte snapshot, avoiding baseline drift.
+        # One stable byte snapshot is scanned before and after the proposed replacements.
         for relative, contents in source_files.items():
-            parts = PurePosixPath(relative).parts
-            baseline_file = baseline_workspace.joinpath(*parts)
-            candidate_file = candidate_workspace.joinpath(*parts)
-            baseline_file.parent.mkdir(parents=True, exist_ok=True)
-            candidate_file.parent.mkdir(parents=True, exist_ok=True)
-            baseline_file.write_bytes(contents)
-            candidate_file.write_bytes(contents)
+            destination = workspace.joinpath(*PurePosixPath(relative).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(contents)
 
-        baseline = scan_directory(baseline_workspace)
+        baseline = scan_directory(workspace)
         if baseline.errors:
             raise ValueError("baseline snapshot scan is incomplete: " + "; ".join(baseline.errors[:5]))
 
         for change in validated["changes"]:
-            destination = candidate_workspace.joinpath(*PurePosixPath(change["path"]).parts)
+            destination = workspace.joinpath(*PurePosixPath(change["path"]).parts)
             destination.write_bytes(change["replacement"].encode("utf-8"))
 
-        candidate = scan_directory(candidate_workspace)
+        candidate = scan_directory(workspace)
         introduced, resolved = _finding_delta(baseline.findings, candidate.findings)
 
         introduced_blockers = [

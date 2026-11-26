@@ -84,7 +84,9 @@ class MissionRunnerTests(unittest.TestCase):
             result=run_audit_mission(root)
             self.assertEqual(result.status,"incomplete")
             self.assertIn("scan_project",[step.name for step in result.steps])
-            self.assertNotIn("propose_repairs",[step.name for step in result.steps])
+            skipped=[step for step in result.steps if step.name=="propose_repairs"]
+            self.assertEqual(len(skipped),1)
+            self.assertEqual(skipped[0].status,"skipped")
 
     def test_json_report_contains_plan_and_findings(self):
         with tempfile.TemporaryDirectory() as temp:

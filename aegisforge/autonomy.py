@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .models import Finding, ScanResult
-from .project_map import build_project_map
+from .engine import run_repair_trial
+from .project_map import ProjectMap, build_project_map
 from .repairs import RepairProposal, apply_repairs, propose_repairs
 from .scanner import scan_directory
 
@@ -86,6 +87,12 @@ def create_local_registry() -> ToolRegistry:
         mutates=False,
     ))
     registry.register(ActionTool(
+        "trial_repairs",
+        "Evaluate built-in repair proposals in a disposable workspace without changing project files.",
+        run_repair_trial,
+        mutates=False,
+    ))
+    registry.register(ActionTool(
         "apply_supported_repairs",
         "Apply only built-in deterministic repairs, create backups, rescan, and roll back failures.",
         apply_repairs,
@@ -105,6 +112,7 @@ class MissionResult:
     target: str
     status: str
     steps: list[MissionStep] = field(default_factory=list)
+    project_map: ProjectMap | None = None
     initial_scan: ScanResult | None = None
     proposed_repairs: list[RepairProposal] = field(default_factory=list)
     final_scan: ScanResult | None = None
@@ -126,6 +134,7 @@ class MissionResult:
             "target": self.target,
             "status": self.status,
             "steps": [asdict(step) for step in self.steps],
+            "project_map": self.project_map.to_dict() if self.project_map else None,
             "scanned_files": self.initial_scan.scanned_files if self.initial_scan else 0,
             "initial_findings": [item.to_dict() for item in self.initial_findings],
             "proposed_repairs": [
@@ -149,6 +158,28 @@ def run_audit_mission(
     root = Path(target).expanduser().resolve()
     result = MissionResult(target=str(root), status="running")
     result.steps.append(MissionStep(
+        "map_project", "running",
+        "Build a structural index of Python files without importing or executing source.",
+    ))
+    try:
+        result.project_map = tools.call("map_project", root)
+        result.steps[-1] = MissionStep(
+            "map_project",
+            "incomplete" if result.project_map.warnings else "completed",
+            (
+                f"Indexed {result.project_map.summary['modules']} Python module(s), "
+                f"{result.project_map.summary['classes']} class(es), "
+                f"{result.project_map.summary['functions']} function(s), "
+                f"and {result.project_map.summary['calls']} call site(s)."
+            ),
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        result.errors.append(str(exc))
+        result.steps[-1] = MissionStep("map_project", "failed", "The structural project map could not be completed.")
+        result.status = "failed"
+        return result
+
+    result.steps.append(MissionStep(
         "scan_project", "running", "Inspect supported files without executing project code."
     ))
     try:
@@ -165,11 +196,13 @@ def run_audit_mission(
         result.status = "failed"
         return result
 
-    if initial.errors:
-        result.errors.extend(initial.errors)
+    if result.project_map.warnings or initial.errors:
+        for warning in [*result.project_map.warnings, *initial.errors]:
+            if warning not in result.errors:
+                result.errors.append(warning)
         result.steps.append(MissionStep(
             "propose_repairs", "skipped",
-            "Repair planning is stopped because the scan was incomplete.",
+            "Repair planning is stopped because structural mapping or security scanning was incomplete.",
         ))
         result.status = "incomplete"
         return result

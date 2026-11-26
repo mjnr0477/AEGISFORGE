@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .autonomy import create_local_registry, run_audit_mission
+from .engine import load_plan_file, run_repair_trial, run_trial
 from .baselines import compare_with_baseline, create_baseline, load_baseline
 from .models import SEVERITY_ORDER
 from .project_map import build_project_map
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--apply-supported-repairs", action="store_true", help="Explicitly approve built-in local file changes")
     audit.add_argument("--backup-dir", help="Optional directory for repair backups")
     audit.add_argument("--format", choices=("text", "json"), default="text")
+
+    trial = mission_actions.add_parser("trial", help="Evaluate proposed edits in a disposable workspace without changing project files")
+    trial.add_argument("target", help="Local project directory you own or are authorized to modify")
+    trial.add_argument("--plan", help="Optional hash-checked JSON replacement plan; omit to test built-in repair proposals")
+    trial.add_argument("--format", choices=("text", "json"), default="text")
+    trial.add_argument("--output", help="Write the trial report to this file instead of stdout")
 
     baseline = commands.add_parser("baseline", help="Create or compare a local finding baseline")
     actions = baseline.add_subparsers(dest="baseline_action", required=True)
@@ -190,6 +197,37 @@ def _run_mission(args: argparse.Namespace) -> int:
             print("\nNo files were changed. Review proposals, then rerun with --apply-supported-repairs to authorize them.")
     return 2 if result.status in {"failed", "incomplete"} else 0
 
+def _run_mission_trial(args: argparse.Namespace) -> int:
+    if args.plan:
+        plan = load_plan_file(args.plan)
+        result = run_trial(args.target, plan)
+    else:
+        result = run_repair_trial(args.target)
+
+    if args.format == "json":
+        report = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
+    else:
+        lines = [
+            "AegisForge mission trial",
+            f"Target: {result['target']}",
+            f"Decision: {result['decision']}",
+            f"Reason: {result.get('reason', '')}",
+            f"Changed files: {', '.join(result.get('changed_files', [])) or 'none'}",
+        ]
+        for item in result.get("resolved_findings", []):
+            lines.append(f"RESOLVED {item['rule_id']} {item['path']}:{item['line']}")
+        for item in result.get("introduced_findings", []):
+            lines.append(f"INTRODUCED [{item['severity'].upper()}] {item['rule_id']} {item['path']}:{item['line']}")
+        lines.append("Original project modified: no")
+        lines.append("Candidate project code executed: no")
+        report = "\n".join(lines) + "\n"
+
+    status = _write_report(report, args.output)
+    if status:
+        return status
+    return 1 if result["decision"] == "rejected" else 0
+
+
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     destination = args.output or str(Path(result.root) / ".aegisforge" / "baseline.json")
@@ -234,6 +272,8 @@ def main(argv=None) -> int:
             return _run_tools(args)
         if args.command == "mission" and args.mission_action == "audit":
             return _run_mission(args)
+        if args.command == "mission" and args.mission_action == "trial":
+            return _run_mission_trial(args)
         if args.command == "scan":
             return _run_scan(args)
         if args.command == "map":

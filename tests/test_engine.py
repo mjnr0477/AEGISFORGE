@@ -202,6 +202,27 @@ class ControlledTrialTests(unittest.TestCase):
                 run_trial(root, make_plan("app.py", original, "value = 1\n"))
             self.assertEqual(source.read_text(encoding="utf-8"), original)
 
+    def test_rejects_new_request_input_to_exec_flow(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "app.py"
+            original = "def handler(request):\n    return 'ok'\n"
+            replacement = (
+                "def handler(request):\n"
+                "    payload = request.args['cmd']\n"
+                "    exec(payload)\n"
+            )
+            source.write_text(original, encoding="utf-8")
+
+            report = run_trial(root, make_plan("app.py", original, replacement))
+
+            self.assertEqual(report["decision"], "rejected")
+            self.assertIn(
+                "AF-FLOW-001",
+                [item["rule_id"] for item in report["introduced_findings"]],
+            )
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
     def test_candidate_project_code_is_never_executed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

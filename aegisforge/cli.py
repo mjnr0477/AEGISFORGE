@@ -11,6 +11,7 @@ from .reporters import to_json, to_markdown, to_sarif, to_text
 from .repairs import apply_repairs, propose_repairs
 from .rules import RULES
 from .scanner import scan_directory
+from .webserver import serve
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aegisforge", description="Offline, evidence-based source/configuration security analysis.")
@@ -27,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("target", help="Project directory you own or are authorized to modify")
     repair.add_argument("--apply", action="store_true", help="Apply supported changes after creating backups")
     repair.add_argument("--backup-dir", help="Optional directory for original-file backups")
+
+    server = commands.add_parser("serve", help="Open the local browser security workbench")
+    server.add_argument("--host", choices=("127.0.0.1", "::1"), default="127.0.0.1")
+    server.add_argument("--port", type=int, default=8765)
 
     commands.add_parser("rules", help="List checks included in this release")
 
@@ -128,6 +133,9 @@ def main(argv=None) -> int:
             return 0
         if args.command == "scan":
             return _run_scan(args)
+        if args.command == "serve":
+            serve(args.host, args.port)
+            return 0
         if args.command == "repair":
             return _run_repair(args)
         if args.command == "baseline" and args.baseline_action == "create":

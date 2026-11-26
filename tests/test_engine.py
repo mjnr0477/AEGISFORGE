@@ -78,7 +78,7 @@ class ControlledTrialTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe change path"):
             validate_plan(make_plan("../outside.py", "x = 1\n", "x = 2\n"))
         with self.assertRaisesRegex(ValueError, "non-empty relative POSIX path"):
-            validate_plan(make_plan("nested/app.py:Zone.Identifier", "x = 1\\n", "x = 2\\n"))
+            validate_plan(make_plan("nested/app.py:Zone.Identifier", "x = 1\n", "x = 2\n"))
         plan = {
             "schema_version": 1,
             "changes": [
@@ -182,10 +182,10 @@ class ControlledTrialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "app.py"
-            original = "value = 1\\n"
+            original = "value = 1\n"
             source.write_text(original, encoding="utf-8")
 
-            report = run_trial(root, make_plan("app.py", original, "def broken(\\n"))
+            report = run_trial(root, make_plan("app.py", original, "def broken(\n"))
 
             self.assertEqual(report["decision"], "rejected")
             self.assertTrue(report["candidate_scan_errors"])
@@ -195,11 +195,11 @@ class ControlledTrialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "app.py"
-            original = "def broken(\\n"
+            original = "def broken(\n"
             source.write_text(original, encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "baseline scan is incomplete"):
-                run_trial(root, make_plan("app.py", original, "value = 1\\n"))
+                run_trial(root, make_plan("app.py", original, "value = 1\n"))
             self.assertEqual(source.read_text(encoding="utf-8"), original)
 
     def test_candidate_project_code_is_never_executed(self):

@@ -134,6 +134,14 @@ class _FlowVisitor(ast.NodeVisitor):
                 self.aliases[item.asname or item.name] = "request"
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        previous_taint = self.tainted_names
+        self.tainted_names = set()
+        self.scope.append(node.name)
+        self.generic_visit(node)
+        self.scope.pop()
+        self.tainted_names = previous_taint
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         previous_taint = self.tainted_names
         self.tainted_names = set()

@@ -120,6 +120,20 @@ class MissionResult:
     def final_findings(self) -> list[Finding]:
         return list(self.final_scan.findings) if self.final_scan else []
 
+    @property
+    def manual_review_findings(self) -> list[Finding]:
+        """Return current findings not covered by a built-in repair proposal."""
+        current = self.final_findings if self.final_scan is not None else self.initial_findings
+        supported = {
+            (proposal.path, rule_id)
+            for proposal in self.proposed_repairs
+            for rule_id in proposal.rule_ids
+        }
+        return [
+            finding for finding in current
+            if (finding.path, finding.rule_id) not in supported
+        ]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "mission": "local_security_audit",
@@ -130,6 +144,7 @@ class MissionResult:
             "project_map": self.project_map.to_dict() if self.project_map else None,
             "scanned_files": self.initial_scan.scanned_files if self.initial_scan else 0,
             "initial_findings": [item.to_dict() for item in self.initial_findings],
+            "manual_review_findings": [item.to_dict() for item in self.manual_review_findings],
             "proposed_repairs": [
                 {"path": item.path, "rule_ids": list(item.rule_ids), "diff": item.diff}
                 for item in self.proposed_repairs

@@ -50,8 +50,10 @@ class MissionRunnerTests(unittest.TestCase):
             source.write_text(original,encoding="utf-8")
             result=run_audit_mission(root)
             self.assertEqual(result.status,"approval_required")
+            self.assertIsNotNone(result.project_map)
             self.assertEqual(source.read_text(encoding="utf-8"),original)
             self.assertEqual(len(result.proposed_repairs),1)
+            self.assertIn("map_project",[step.name for step in result.steps])
             self.assertEqual(result.steps[-1].status,"pending_approval")
             self.assertIn("scan_project",[step.name for step in result.steps])
             self.assertIn("propose_repairs",[step.name for step in result.steps])
@@ -92,12 +94,41 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             (root/"settings.env").write_text("DEBUG=true\n",encoding="utf-8")
+            (root/"app.py").write_text("def greet():\n    return 'hello'\n",encoding="utf-8")
             result=run_audit_mission(root)
             payload=result.to_dict()
             self.assertEqual(payload["mission"],"local_security_audit")
             self.assertEqual(payload["status"],"approval_required")
+            self.assertEqual(payload["project_map"]["summary"]["modules"],1)
             self.assertEqual(payload["proposed_repairs"][0]["rule_ids"],["AF-CFG-001"])
             self.assertEqual(payload["initial_findings"][0]["rule_id"],"AF-CFG-001")
+
+    def test_project_map_warning_stops_mission_before_repair_planning(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            source=root/"broken.py"
+            source.write_text("def broken(:\\n",encoding="utf-8")
+            result=run_audit_mission(root)
+            self.assertEqual(result.status,"incomplete")
+            self.assertIsNotNone(result.project_map)
+            self.assertTrue(any("syntax error" in warning for warning in result.project_map.warnings))
+            proposal_steps=[step for step in result.steps if step.name=="propose_repairs"]
+            self.assertEqual(len(proposal_steps),1)
+            self.assertEqual(proposal_steps[0].status,"skipped")
+
+    def test_trial_repairs_tool_is_read_only_and_preserves_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            source=root/"settings.env"
+            original="DEBUG=true\\n"
+            source.write_text(original,encoding="utf-8")
+            registry=create_local_registry()
+            trial=next(item for item in registry.describe() if item["name"]=="trial_repairs")
+            self.assertFalse(trial["mutates"])
+            report=registry.call("trial_repairs",root)
+            self.assertEqual(report["decision"],"accepted")
+            self.assertFalse(report["execution"]["source_project_modified"])
+            self.assertEqual(source.read_text(encoding="utf-8"),original)
 
     def test_custom_registry_mutation_gate_is_used(self):
         registry=create_local_registry()

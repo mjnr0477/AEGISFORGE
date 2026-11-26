@@ -36,7 +36,7 @@ class ArchiveScanTests(unittest.TestCase):
         self.assertEqual(project_map["operation"],"project_map")
         self.assertEqual(project_map["summary"]["modules"],2)
         self.assertGreaterEqual(project_map["summary"]["classes"],2)
-        self.assertEqual(project_map["modules"][0]["path"],"main.py")
+        self.assertEqual(project_map["modules"][0]["path"],"project/main.py")
         self.assertNotIn("aegisforge-upload-",str(project_map))
 
     def test_rejects_parent_traversal_paths(self):

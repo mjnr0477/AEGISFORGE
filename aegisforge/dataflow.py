@@ -77,7 +77,9 @@ class _FlowVisitor(ast.NodeVisitor):
 
     def _taint_origins(self, node: ast.AST | None) -> set[int]:
         """Return source line numbers that can reach this expression."""
-        if node is None:
+        if node is None or isinstance(node, ast.Lambda):
+            # A lambda body is evaluated only when invoked, not when assigned.
+            # Sinks inside the body are still visited independently by NodeVisitor.
             return set()
         if isinstance(node, ast.Name):
             return set(self.taint_sources.get(node.id, set()))
@@ -186,9 +188,12 @@ class _FlowVisitor(ast.NodeVisitor):
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
         self.tainted_names = set()
+        self.taint_sources = {}
         self.generic_visit(node)
         self.tainted_names = previous_taint
+        self.taint_sources = previous_sources
 
     def visit_Assign(self, node: ast.Assign) -> None:
         origins = self._taint_origins(node.value)
@@ -211,7 +216,7 @@ class _FlowVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self._assign_target(node.target, self._is_tainted(node.iter))
+        self._assign_target(node.target, self._taint_origins(node.iter))
         self.generic_visit(node)
 
     def _first_argument_origins(self, node: ast.Call, keyword_names: tuple[str, ...] = ()) -> set[int]:

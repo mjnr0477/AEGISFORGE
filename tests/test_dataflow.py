@@ -91,7 +91,9 @@ def endpoint():
         self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
 
     def test_tracks_input_function_into_exec(self):
-        source = "code = input()\\nexec(code)\\n"
+        source = """code = input()
+exec(code)
+"""
         findings=analyze_python_flows(source,"app.py")
         self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
 

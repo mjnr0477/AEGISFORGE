@@ -109,10 +109,10 @@ class ControlledTrialTests(unittest.TestCase):
             root = base / "project"
             root.mkdir()
             source = root / "app.py"
-            original = "eval(user_input)\\n"
+            original = "eval(user_input)\n"
             source.write_text(original, encoding="utf-8")
             plan_path = base / "trial.json"
-            plan_path.write_text(json.dumps(make_plan("app.py", original, "result = user_input\\n")), encoding="utf-8")
+            plan_path.write_text(json.dumps(make_plan("app.py", original, "result = user_input\n")), encoding="utf-8")
             report_path = base / "report.json"
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -125,10 +125,10 @@ class ControlledTrialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "app.py"
-            original = "value = 1\\n"
+            original = "value = 1\n"
             source.write_text(original, encoding="utf-8")
             plan_path = root / "trial.json"
-            plan_path.write_text(json.dumps(make_plan("app.py", original, "eval(user_input)\\n")), encoding="utf-8")
+            plan_path.write_text(json.dumps(make_plan("app.py", original, "eval(user_input)\n")), encoding="utf-8")
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = main(["engine", "trial", str(root), "--plan", str(plan_path)])

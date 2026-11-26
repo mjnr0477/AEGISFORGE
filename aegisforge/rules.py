@@ -21,5 +21,8 @@ RULES = [
     Rule("AF-PAY-001", "Non-constant-time webhook signature comparison", "medium", "A received webhook signature appears to be compared with an expected signature using ordinary equality.", "Use hmac.compare_digest over the exact raw request-body signature before trusting payment or webhook fields.", "CWE-208"),
     Rule("AF-PY-007", "Unsafe YAML deserialization", "high", "PyYAML load/unsafe_load is used without a SafeLoader.", "Use yaml.safe_load() or pass yaml.SafeLoader explicitly; never deserialize untrusted YAML with an unsafe loader.", "CWE-502"),
     Rule("AF-CON-003", "Container privilege escalation allowed", "high", "A container configuration allows processes to gain additional privileges.", "Set allowPrivilegeEscalation to false and drop unnecessary Linux capabilities.", "CWE-250"),
+    Rule("AF-FLOW-001", "Untrusted input reaches dynamic evaluation", "high", "A value derived from request or interactive input reaches eval/exec through simple local assignments.", "Avoid dynamic evaluation. Parse input as data and dispatch through explicit, validated operations.", "CWE-95"),
+    Rule("AF-FLOW-002", "Untrusted input reaches a shell command", "high", "A value derived from request or interactive input reaches a shell-enabled subprocess call.", "Do not build shell commands from request data. Use a fixed executable and validated argument arrays with shell=False.", "CWE-78"),
+    Rule("AF-FLOW-003", "Untrusted input reaches SQL query text", "high", "A value derived from request or interactive input reaches the SQL query string passed to execute().", "Keep SQL text constant and pass untrusted values separately through parameterized query arguments.", "CWE-89"),
 ]
 RULE_MAP = {item.rule_id: item for item in RULES}

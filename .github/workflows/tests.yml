@@ -26,3 +26,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: node --check aegisforge/web/app.js
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip wheel . --no-deps --wheel-dir dist
+      - run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+          wheels = glob.glob("dist/*.whl")
+          if len(wheels) != 1:
+              raise SystemExit(f"Expected exactly one wheel, got {wheels}")
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = set(archive.namelist())
+          expected = {
+              "aegisforge/web/index.html",
+              "aegisforge/web/app.css",
+              "aegisforge/web/app.js",
+          }
+          missing = sorted(expected - names)
+          if missing:
+              raise SystemExit(f"Wheel is missing browser assets: {missing}")
+          print(f"Wheel contains all {len(expected)} browser workbench assets.")
+          PY

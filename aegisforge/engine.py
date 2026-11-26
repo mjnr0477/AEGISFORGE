@@ -210,7 +210,7 @@ def run_trial(target: str | Path, plan: dict[str, Any]) -> dict[str, Any]:
 
         baseline = scan_directory(workspace)
         if baseline.errors:
-            raise ValueError("baseline snapshot scan is incomplete: " + "; ".join(baseline.errors[:5]))
+            raise ValueError("baseline scan is incomplete: " + "; ".join(baseline.errors[:5]))
 
         for change in validated["changes"]:
             destination = workspace.joinpath(*PurePosixPath(change["path"]).parts)

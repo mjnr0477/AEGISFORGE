@@ -1,10 +1,10 @@
 # AegisForge
 
-**Offline, local-first software security workbench.** AegisForge reads source code and configuration, reports evidence-backed findings, tracks local baselines, and supports a small set of preview-first repairs. It requires no external AI API, telemetry service, or cloud model.
+**Offline, local-first software security workbench.** AegisForge reads source code and configuration, reports evidence-backed findings, tracks local baselines, supports preview-first repairs, and evaluates proposed edits in disposable workspaces. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.1.9
+## Current repository build: 0.1.10
 
-The repository includes the Python package, static analyzers, bounded scanner, CLI, text/Markdown/JSON/SARIF reports, local finding baselines, verified repair previews, and a browser workbench served only on loopback.
+The repository includes the Python package, static analyzers, bounded scanner, CLI, text/Markdown/JSON/SARIF reports, local finding baselines, verified repair previews, a controlled engineering trial engine, and a browser workbench served only on loopback.
 
 ### Included checks
 
@@ -49,12 +49,60 @@ aegisforge repair ./my-project --apply
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
 
+### Controlled engineering trials
+
+The trial engine evaluates proposed file replacements without changing the original project or executing candidate code. A plan contains only existing supported file paths, each file's expected SHA-256, and replacement text.
+
+~~~bash
+aegisforge engine trial ./my-project --plan trial.json --output trial-report.json
+~~~
+
+Minimal plan shape:
+
+~~~json
+{
+  "schema_version": 1,
+  "changes": [
+    {
+      "path": "app.py",
+      "expected_sha256": "64-lowercase-hex-characters-for-the-original-file",
+      "replacement": "result = user_input\\n"
+    }
+  ]
+}
+~~~
+
+Create the expected hash from the exact original file bytes. For example:
+
+~~~python
+from pathlib import Path
+import hashlib
+import json
+
+source = Path("my-project/app.py")
+plan = {
+    "schema_version": 1,
+    "changes": [{
+        "path": "app.py",
+        "expected_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "replacement": "result = user_input\\n",
+    }],
+}
+Path("trial.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+~~~
+
+The engine snapshots supported files, verifies every expected hash, builds baseline and candidate copies in a temporary directory, then compares static findings. It returns **accepted** when no new findings are detected, **review** when new lower-severity findings appear, and **rejected** when new critical/high findings or candidate scan errors appear. A rejected trial exits with code 1; operational errors exit with code 2. The temporary workspace is deleted after the report is built.
+
+A trial is not a functional test or proof of exploitability. Accepted changes still require human review and explicit application to the original project.
+
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan.
 
 ## Safety model
 
 - Only scan source code and systems you own or are explicitly authorized to assess.
 - Source files are read and Python is parsed with the AST; scanned code is never imported or executed.
+- Trial plans accept only hash-checked text replacements; arbitrary commands and additional plan fields are rejected.
+- Trial work happens in disposable copies. The original project is never modified by the trial engine.
 - Symlinks are rejected; individual-file, aggregate-byte, file-count, directory-count and entry-count limits bound scanning.
 - Browser uploads are accepted only by the loopback server and are never forwarded to another service.
 - Evidence is redacted before it enters reports.
@@ -74,7 +122,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13.
 
 ## Roadmap
 
-The next research milestone is a controlled engineering engine that can propose modifications, run checks in isolated workspaces, compare outcomes, and roll back failures. AegisForge is not yet a general autonomous intelligence or a universal system controller.
+The next research milestone is a reviewable planner that can construct candidate changes from explicit engineering goals, followed by additional deterministic checks and optional user-configured tests. AegisForge is not yet a general autonomous intelligence or a universal system controller.
 
 ## License
 

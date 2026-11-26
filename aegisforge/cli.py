@@ -1,4 +1,4 @@
-"""Command-line interface for offline scanning, baselines, and repair previews."""
+"""Command-line interface for offline scanning, baselines, repair previews, and trials."""
 import argparse
 import json
 import sys
@@ -6,12 +6,14 @@ from pathlib import Path
 
 from . import __version__
 from .baselines import compare_with_baseline, create_baseline, load_baseline
+from .engine import load_plan_file, run_trial
 from .models import SEVERITY_ORDER
 from .reporters import to_json, to_markdown, to_sarif, to_text
 from .repairs import apply_repairs, propose_repairs
 from .rules import RULES
 from .scanner import scan_directory
 from .webserver import serve
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aegisforge", description="Offline, evidence-based source/configuration security analysis.")
@@ -28,6 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("target", help="Project directory you own or are authorized to modify")
     repair.add_argument("--apply", action="store_true", help="Apply supported changes after creating backups")
     repair.add_argument("--backup-dir", help="Optional directory for original-file backups")
+
+    engine = commands.add_parser("engine", help="Run controlled engineering trials in disposable workspaces")
+    engine_actions = engine.add_subparsers(dest="engine_action", required=True)
+    trial = engine_actions.add_parser("trial", help="Test hash-checked file replacements without modifying the source project")
+    trial.add_argument("target", help="Local project directory you own or are authorized to modify")
+    trial.add_argument("--plan", required=True, help="UTF-8 JSON file containing hash-checked replacement operations")
+    trial.add_argument("--output", help="Write the JSON trial report to this file instead of stdout")
 
     server = commands.add_parser("serve", help="Open the local browser security workbench")
     server.add_argument("--host", choices=("127.0.0.1", "::1"), default="127.0.0.1")
@@ -47,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
+
 def _write_report(report: str, destination: str | None) -> int:
     if not destination:
         sys.stdout.write(report)
@@ -61,6 +71,7 @@ def _write_report(report: str, destination: str | None) -> int:
     print(f"Report written to {path}")
     return 0
 
+
 def _run_scan(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     renderers = {"text": to_text, "markdown": to_markdown, "json": to_json, "sarif": to_sarif}
@@ -74,6 +85,7 @@ def _run_scan(args: argparse.Namespace) -> int:
     if result.errors:
         return 2
     return 0
+
 
 def _run_repair(args: argparse.Namespace) -> int:
     proposals = propose_repairs(args.target)
@@ -91,6 +103,16 @@ def _run_repair(args: argparse.Namespace) -> int:
     print(f"\nApplied and verified {len(proposals)} file change(s). Backups: {len(backups)}")
     return 0
 
+
+def _run_engine_trial(args: argparse.Namespace) -> int:
+    plan = load_plan_file(args.plan)
+    report = run_trial(args.target, plan)
+    status = _write_report(json.dumps(report, indent=2, ensure_ascii=False) + "\n", args.output)
+    if status:
+        return status
+    return 1 if report["decision"] == "rejected" else 0
+
+
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     destination = args.output or str(Path(result.root) / ".aegisforge" / "baseline.json")
@@ -98,6 +120,7 @@ def _run_baseline_create(args: argparse.Namespace) -> int:
     print(f"Baseline created: {destination}")
     print(f"Recorded {len(payload['findings'])} finding(s) across {payload['scanned_files']} scanned file(s).")
     return 0
+
 
 def _run_baseline_compare(args: argparse.Namespace) -> int:
     baseline = load_baseline(args.baseline_path)
@@ -124,6 +147,7 @@ def _run_baseline_compare(args: argparse.Namespace) -> int:
             print(f"WARNING: {error}")
     return 2 if result.errors else 0
 
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -138,6 +162,8 @@ def main(argv=None) -> int:
             return 0
         if args.command == "repair":
             return _run_repair(args)
+        if args.command == "engine" and args.engine_action == "trial":
+            return _run_engine_trial(args)
         if args.command == "baseline" and args.baseline_action == "create":
             return _run_baseline_create(args)
         if args.command == "baseline" and args.baseline_action == "compare":
@@ -147,6 +173,7 @@ def main(argv=None) -> int:
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"AegisForge: {exc}", file=sys.stderr)
         return 2
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

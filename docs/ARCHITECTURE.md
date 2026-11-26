@@ -1,12 +1,12 @@
 # AegisForge architecture
 
-AegisForge v0.1.8 is a local-first static security workbench. It has no external model API, telemetry endpoint, or cloud runtime requirement.
+AegisForge v0.1.9 is a local-first static security workbench. It has no external model API, telemetry endpoint, or cloud runtime requirement.
 
 ## Data flow
 
 1. The CLI validates a local directory or starts the loopback-only web server.
 2. The scanner traverses supported files while skipping symlinks, dependency/build directories, and files outside bounded resource limits.
-3. Text analyzers inspect configuration and common source patterns; Python source is parsed with the standard-library AST module.
+3. Text analyzers inspect configuration and common source patterns; Python source is parsed with the standard-library AST module. Static rules cover unsafe YAML deserialization as well as common command, TLS, SQL, and payment-signature mistakes.
 4. Findings are represented as immutable data objects with stable rule IDs, severity, location, redacted evidence, remediation, and confidence.
 5. Report renderers produce text, Markdown, JSON, or SARIF.
 6. Local baselines fingerprint findings and classify them as new, known, or resolved.
@@ -20,7 +20,7 @@ AegisForge v0.1.8 is a local-first static security workbench. It has no external
 - ZIP entries are not allowed to create symlinks, special files, absolute paths, traversal paths, duplicate paths, or out-of-root writes.
 - Reads and extraction are bounded by per-file, aggregate size, file-count, directory-count and archive-entry limits.
 - The browser server binds only to a loopback IP literal and accepts only local Host and same-origin request headers.
-- The browser UI renders finding content through text nodes; scan output is not interpreted as HTML.
+- The browser UI renders finding content through text nodes; scan output is not interpreted as HTML. Container rules also identify privileged mode, hostPath mounts and privilege-escalation settings.
 - Evidence snippets are redacted before they enter reports.
 - Rules are conservative and may produce false positives or miss issues; human review is required.
 

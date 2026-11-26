@@ -26,7 +26,7 @@ function humanBytes(value) {
 }
 
 function chooseFile(file) {
-  if (!file) return;
+  if (!file || state.controller) return;
   if (!file.name.toLowerCase().endsWith(".zip")) {
     setStatus("Choose a .zip archive. Other file types are not accepted.", "error");
     return;
@@ -49,6 +49,7 @@ function chooseFile(file) {
 }
 
 function clearFile() {
+  if (state.controller) return;
   state.file = null;
   fileInput.value = "";
   byId("fileRow").hidden = true;
@@ -130,7 +131,7 @@ function showResult(result) {
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
   resultsSection.hidden = false;
-  resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  resultsSection.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 }
 
 async function runScan() {
@@ -140,6 +141,7 @@ async function runScan() {
   cancelButton.hidden = false;
   progress.hidden = false;
   dropZone.setAttribute("aria-disabled", "true");
+  byId("removeFile").disabled = true;
   setStatus("Scanning locally. Uploaded source files are not executed.");
   try {
     const response = await fetch("/api/scan", {
@@ -166,6 +168,7 @@ async function runScan() {
     cancelButton.hidden = true;
     progress.hidden = true;
     dropZone.removeAttribute("aria-disabled");
+    byId("removeFile").disabled = false;
   }
 }
 
@@ -183,25 +186,26 @@ function exportReport() {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", () => { if (!state.controller) fileInput.click(); });
 dropZone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") {
+  if (!state.controller && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
     fileInput.click();
   }
 });
 dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
+  if (state.controller) return;
   dropZone.classList.add("dragging");
 });
 dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
 dropZone.addEventListener("drop", (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragging");
-  chooseFile(event.dataTransfer.files && event.dataTransfer.files[0]);
+  if (!state.controller) chooseFile(event.dataTransfer.files && event.dataTransfer.files[0]);
 });
 fileInput.addEventListener("change", () => chooseFile(fileInput.files && fileInput.files[0]));
 byId("removeFile").addEventListener("click", clearFile);

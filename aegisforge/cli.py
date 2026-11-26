@@ -8,6 +8,7 @@ from . import __version__
 from .autonomy import create_local_registry, run_audit_mission
 from .baselines import compare_with_baseline, create_baseline, load_baseline
 from .models import SEVERITY_ORDER
+from .project_map import build_project_map
 from .reporters import to_json, to_markdown, to_sarif, to_text
 from .repairs import apply_repairs, propose_repairs
 from .rules import RULES
@@ -18,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aegisforge", description="Offline, evidence-based source/configuration security analysis.")
     parser.add_argument("--version", action="version", version=f"AegisForge {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    project_map = commands.add_parser("map", help="Index Python modules, symbols, imports and call sites without executing code")
+    project_map.add_argument("target", help="Local project directory")
+    project_map.add_argument("--format", choices=("text", "json"), default="text")
+    project_map.add_argument("--output", help="Write the index to a file instead of stdout")
 
     scan = commands.add_parser("scan", help="Scan a local project directory")
     scan.add_argument("target", help="Directory you own or are authorized to assess")
@@ -86,6 +92,36 @@ def _run_scan(args: argparse.Namespace) -> int:
     if result.errors:
         return 2
     return 0
+
+def _run_map(args: argparse.Namespace) -> int:
+    project_map = build_project_map(args.target)
+    if args.format == "json":
+        report = json.dumps(project_map.to_dict(), indent=2, ensure_ascii=False) + "\\n"
+    else:
+        lines = [
+            f"AegisForge project map: {project_map.project}",
+            f"Python files indexed: {project_map.scanned_files} | skipped: {project_map.skipped_files}",
+            "Summary: " + ", ".join(f"{key}={value}" for key, value in project_map.summary.items()),
+        ]
+        for module in project_map.modules:
+            lines.extend(["", f"MODULE {module.module} ({module.path})"])
+            for item in module.imports:
+                imported = f" import {item.imported_name}" if item.imported_name else ""
+                alias = f" as {item.alias}" if item.alias else ""
+                relative = "." * item.relative_level
+                lines.append(f"  IMPORT {relative}{item.module}{imported}{alias} [line {item.line}]")
+            for symbol in module.symbols:
+                params = f" parameters={symbol.parameters}" if symbol.kind != "class" else ""
+                lines.append(f"  {symbol.kind.upper()} {symbol.qualified_name} [lines {symbol.line}-{symbol.end_line}]{params}")
+            for call in module.calls:
+                lines.append(f"  CALL {call.caller} -> {call.callee} [line {call.line}]")
+        if project_map.warnings:
+            lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
+        report = "\\n".join(lines) + "\\n"
+    status = _write_report(report, args.output)
+    if status:
+        return status
+    return 2 if project_map.warnings else 0
 
 def _run_repair(args: argparse.Namespace) -> int:
     proposals = propose_repairs(args.target)
@@ -193,6 +229,8 @@ def main(argv=None) -> int:
             return _run_mission(args)
         if args.command == "scan":
             return _run_scan(args)
+        if args.command == "map":
+            return _run_map(args)
         if args.command == "serve":
             serve(args.host, args.port)
             return 0

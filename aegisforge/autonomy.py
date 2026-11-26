@@ -124,11 +124,13 @@ class MissionResult:
     def manual_review_findings(self) -> list[Finding]:
         """Return current findings not covered by a built-in repair proposal."""
         current = self.final_findings if self.final_scan is not None else self.initial_findings
-        supported = {
-            (proposal.path, rule_id)
-            for proposal in self.proposed_repairs
-            for rule_id in proposal.rule_ids
-        }
+        supported = set()
+        if self.status not in {"failed", "incomplete"}:
+            supported = {
+                (proposal.path, rule_id)
+                for proposal in self.proposed_repairs
+                for rule_id in proposal.rule_ids
+            }
         return [
             finding for finding in current
             if (finding.path, finding.rule_id) not in supported

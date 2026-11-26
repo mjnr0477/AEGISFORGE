@@ -168,3 +168,13 @@ h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.035em; }
 .project-module-counts { flex-shrink: 0; color: var(--muted); font: 9px var(--mono); text-align: right; }
 .project-map-more, .project-map-warning { color: var(--muted); font-size: 10px; line-height: 1.5; padding: 5px 2px; }
 .project-map-warning { color: #e7c78f; }
+
+@media (max-width: 760px) {
+  .project-map-panel { padding: 14px; }
+  .project-map-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 390px) {
+  .project-map-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-module { align-items: start; flex-direction: column; gap: 5px; }
+  .project-module-counts { text-align: left; }
+}

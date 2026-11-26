@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from aegisforge.autonomy import (
@@ -87,6 +88,16 @@ class MissionRunnerTests(unittest.TestCase):
             self.assertEqual(len(result.backups),1)
             self.assertEqual(result.final_findings,[])
             self.assertIn("verify_changes",[step.name for step in result.steps])
+
+    def test_failed_repair_keeps_supported_finding_in_manual_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            source=root/"settings.env"
+            source.write_text("DEBUG=true\n",encoding="utf-8")
+            with patch("aegisforge.autonomy.apply_repairs",side_effect=RuntimeError("simulated repair failure")):
+                result=run_audit_mission(root,apply_supported_repairs=True)
+        self.assertEqual(result.status,"failed")
+        self.assertIn("AF-CFG-001",{finding.rule_id for finding in result.manual_review_findings})
 
     def test_clean_project_completes_without_repair_approval(self):
         with tempfile.TemporaryDirectory() as temp:

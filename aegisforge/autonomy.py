@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .models import Finding, ScanResult
+from .project_map import build_project_map
 from .repairs import RepairProposal, apply_repairs, propose_repairs
 from .scanner import scan_directory
 
@@ -70,6 +71,12 @@ def create_local_registry() -> ToolRegistry:
         "scan_project",
         "Read and statically analyze supported source and configuration files in a local directory.",
         scan_directory,
+        mutates=False,
+    ))
+    registry.register(ActionTool(
+        "map_project",
+        "Build a read-only AST index of Python modules, imports, classes, functions, and call sites.",
+        build_project_map,
         mutates=False,
     ))
     registry.register(ActionTool(

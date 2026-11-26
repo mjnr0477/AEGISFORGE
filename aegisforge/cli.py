@@ -103,7 +103,7 @@ def _run_scan(args: argparse.Namespace) -> int:
 def _run_map(args: argparse.Namespace) -> int:
     project_map = build_project_map(args.target)
     if args.format == "json":
-        report = json.dumps(project_map.to_dict(), indent=2, ensure_ascii=False) + "\\n"
+        report = json.dumps(project_map.to_dict(), indent=2, ensure_ascii=False) + "\n"
     else:
         lines = [
             f"AegisForge project map: {project_map.project}",

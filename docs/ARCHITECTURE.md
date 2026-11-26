@@ -1,6 +1,6 @@
 # AegisForge architecture
 
-AegisForge v0.3.0 is a local-first static security workbench, Python source mapper, and deterministic mission runner. It has no external model API, telemetry endpoint, or cloud runtime requirement.
+AegisForge v0.3.1 is a local-first static security workbench, Python source mapper, and deterministic mission runner. It has no external model API, telemetry endpoint, or cloud runtime requirement.
 
 ## Data flow
 
@@ -31,7 +31,7 @@ AegisForge v0.3.0 is a local-first static security workbench, Python source mapp
 
 ## Extension points
 
-New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. New mission tools must be explicitly registered, declare their mutation behavior, and have an approval-gate test when they can change data. New project-map visitors must remain bounded, AST-only, and side-effect-free.
+New analyzers should return Finding objects and use stable rule IDs in the shared catalog. A rule needs positive and negative tests before it is added. New repair rules must remain preview-first, verify exact source state before writing, preserve an original copy, run a post-check, and restore on verification failure. New mission tools must be explicitly registered, declare their mutation behavior, and have an approval-gate test when they can change data. Trial planning must remain declarative, path-bounded, hash-checked, and unable to execute candidate code. New project-map visitors must remain bounded, AST-only, and side-effect-free.
 
 ## Honest capability boundary
 

@@ -117,7 +117,7 @@ def _run_map(args: argparse.Namespace) -> int:
                 lines.append(f"  CALL {call.caller} -> {call.callee} [line {call.line}]")
         if project_map.warnings:
             lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
-        report = "\\n".join(lines) + "\\n"
+        report = "\n".join(lines) + "\n"
     status = _write_report(report, args.output)
     if status:
         return status

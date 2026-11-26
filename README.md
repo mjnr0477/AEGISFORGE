@@ -2,7 +2,7 @@
 
 **Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, builds a structural index of Python projects, checks selected local source-to-sink flows, tracks baselines, prepares repairs, and sequences approved tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.4.1
+## Current repository build: 0.4.2
 
 The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
 
@@ -50,7 +50,7 @@ Run on the same phone or computer that contains the archive:
 aegisforge serve
 ~~~
 
-Open http://127.0.0.1:8765 in that device's browser. Choose a ZIP archive (maximum 25 MB). The server binds only to 127.0.0.1 or ::1, rejects cross-origin requests, validates ZIP paths and symlinks, enforces extraction limits, scans supported source files in a temporary directory, and removes that directory after the scan. The archive is not sent to a remote host.
+Open http://127.0.0.1:8765 in that device's browser. Choose a ZIP archive (maximum 25 MB). The server binds only to 127.0.0.1 or ::1, rejects cross-origin requests, validates ZIP paths and symlinks, enforces extraction limits, scans supported source files in a temporary directory, and removes that directory after the scan. Results include security findings plus a Python project-structure panel showing modules, classes, functions, imports and call sites. Temporary directory names and absolute source roots are not included in the browser report. The archive is not sent to a remote host.
 
 ### Baselines, repairs and missions
 

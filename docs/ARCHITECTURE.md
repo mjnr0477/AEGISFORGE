@@ -1,6 +1,6 @@
 # AegisForge architecture
 
-AegisForge v0.4.0 is a local-first static security workbench, Python source mapper, conservative source-to-sink analyzer, and deterministic mission runner. It has no external model API, telemetry endpoint, or cloud runtime requirement.
+AegisForge v0.4.1 is a local-first static security workbench, Python source mapper, conservative source-to-sink analyzer, and deterministic mission runner. It has no external model API, telemetry endpoint, or cloud runtime requirement.
 
 ## Data flow
 
@@ -8,14 +8,14 @@ AegisForge v0.4.0 is a local-first static security workbench, Python source mapp
 2. The scanner traverses supported files while skipping symlinks, dependency/build directories, and files outside bounded resource limits.
 3. Text analyzers inspect configuration and common source patterns; Python source is parsed with the standard-library AST module. Static rules cover unsafe YAML deserialization as well as common command, TLS, SQL, and payment-signature mistakes.
 4. The Python project mapper creates a structural index of modules, imports, class/function definitions, enclosing scopes, and syntactic call sites. It does not resolve dynamic dispatch or claim a complete semantic call graph.
-5. The Python data-flow visitor tracks selected request/input sources through simple local assignments and flags candidate flows into dynamic evaluation, shell-enabled subprocess commands, and SQL query text. It is intra-function and conservative; it does not establish exploitability or track all language/framework constructs.
+5. The Python data-flow visitor tracks common Flask, ASGI and Django request sources, `input()`, and `sys.argv` through local assignments and supported async iteration. It records source-line provenance and flags candidate flows into the first code/command/query argument of dynamic evaluation, shell-enabled subprocess commands, and SQL execution. It isolates class/function/lambda state, and does not confuse a lambda's deferred return value with an immediately evaluated value. It is intra-function and conservative; it does not establish exploitability or track all language/framework constructs.
 6. Malformed Python creates an explicit incomplete-analysis warning. A scan that cannot parse one of its Python files is not represented as a clean AST analysis.
 7. Findings are represented as immutable data objects with stable rule IDs, severity, location, redacted evidence, remediation, and confidence.
 8. Report renderers produce text, Markdown, JSON, or SARIF.
 9. Local baselines fingerprint findings and classify them as new, known, or resolved.
 10. Repair proposals are generated without writes. Applying requires an explicit CLI flag, preserves backups, checks that files have not changed since preview, validates that the proposal exactly matches a built-in deterministic transformation, rescans, and rolls back when a targeted finding remains or a source-validation error occurs.
 11. The browser workbench accepts a ZIP only from a same-origin loopback request. It validates archive member names, types, compression ratio, count and size limits; extracts only supported source/configuration files to a temporary directory; scans them without executing them; returns the report; and deletes the temporary directory.
-12. The mission runner uses an explicit registry of built-in local tools, including read-only project mapping. Each tool declares whether it mutates project data. The runner maps the project, scans it, prepares supported repair proposals, pauses in an approval-required state by default, and only calls the mutating repair tool when the user supplies the explicit approval flag. A fresh scan verifies the outcome.
+12. The mission runner uses an explicit registry of built-in local tools, including read-only project mapping. Each tool declares whether it mutates project data. The runner maps the project, scans it, prepares supported repair proposals, pauses in an approval-required state by default, and only calls the mutating repair tool when the user supplies the explicit approval flag. A fresh scan verifies the outcome. Mission results classify findings not covered by deterministic repairs as manual-review work; failed or incomplete missions expose every remaining finding for human review.
 
 ## Trust boundaries
 

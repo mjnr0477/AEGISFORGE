@@ -160,20 +160,29 @@ def _run_mission_trial(args: argparse.Namespace) -> int:
         result = run_trial(args.target, plan)
     else:
         result = run_repair_trial(args.target)
-    serialized = json.dumps(result, indent=2, ensure_ascii=False) + "\\n"
-    status = _write_report(serialized, args.output)
+
+    if args.format == "json":
+        report = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
+    else:
+        lines = [
+            "AegisForge mission trial",
+            f"Target: {result['target']}",
+            f"Decision: {result['decision']}",
+            f"Reason: {result.get('reason', '')}",
+            f"Changed files: {', '.join(result.get('changed_files', [])) or 'none'}",
+        ]
+        for item in result.get("resolved_findings", []):
+            lines.append(f"RESOLVED {item['rule_id']} {item['path']}:{item['line']}")
+        for item in result.get("introduced_findings", []):
+            lines.append(f"INTRODUCED [{item['severity'].upper()}] {item['rule_id']} {item['path']}:{item['line']}")
+        lines.append("Original project modified: no")
+        lines.append("Candidate project code executed: no")
+        report = "\n".join(lines) + "\n"
+
+    status = _write_report(report, args.output)
     if status:
         return status
-    if args.output is None and args.format == "text":
-        print(f"Decision: {result['decision']}")
-        print(f"Reason: {result.get('reason', '')}")
-        for item in result.get("resolved_findings", []):
-            print(f"  RESOLVED {item['rule_id']} {item['path']}:{item['line']}")
-        for item in result.get("introduced_findings", []):
-            print(f"  INTRODUCED [{item['severity'].upper()}] {item['rule_id']} {item['path']}:{item['line']}")
-        print("The original project was not modified and candidate code was not executed.")
     return 1 if result["decision"] == "rejected" else 0
-
 
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)

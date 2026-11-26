@@ -87,7 +87,7 @@ class RepairTests(unittest.TestCase):
             proposals=propose_repairs(root)
             real_read=repairs.read_source_file
             calls=0
-            def fail_on_second_write_check(path, max_bytes=repairs.MAX_FILE_BYTES):
+            def fail_on_second_write_check(path, max_bytes=1_000_000):
                 nonlocal calls
                 calls+=1
                 # Two reads validate the original snapshots; the third checks a.env

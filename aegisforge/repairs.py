@@ -148,9 +148,11 @@ def apply_repairs(
     seen_paths: set[str] = set()
     for proposal in proposals:
         relative = PurePosixPath(proposal.path)
-        if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts) or "\\" in proposal.path:
+        if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts) or "\\" in proposal.path or ":" in proposal.path:
             raise RuntimeError(f"Repair proposal path must be relative and safe: {proposal.path}")
         normalized = relative.as_posix()
+        if normalized != proposal.path:
+            raise RuntimeError(f"Repair proposal must use a canonical relative path: {proposal.path}")
         if normalized in seen_paths:
             raise RuntimeError(f"Duplicate repair proposal path: {proposal.path}")
         seen_paths.add(normalized)
@@ -166,6 +168,14 @@ def apply_repairs(
         current = read_source_file(resolved)
         if current != proposal.original:
             raise RuntimeError(f"Source changed since preview: {proposal.path}")
+        expected = _repair_text(resolved, normalized, current)
+        if (
+            expected is None
+            or expected.rule_ids != proposal.rule_ids
+            or expected.replacement != proposal.replacement
+            or expected.diff != proposal.diff
+        ):
+            raise RuntimeError(f"Repair proposal is not a supported deterministic repair: {proposal.path}")
         validated.append((resolved, proposal))
 
     if backup_dir is None:

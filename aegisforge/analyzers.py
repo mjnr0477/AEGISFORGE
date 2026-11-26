@@ -41,6 +41,107 @@ def _finding(rule_id: str, path: str, line: int, column: int, evidence: str, con
                    max(1, line), max(1, column), sanitize_evidence(evidence),
                    rule.remediation, confidence, rule.cwe)
 
+
+def _terraform_masks(text: str) -> tuple[str, str]:
+    """Mask comments and quoted strings for safe, brace-aware Terraform scanning."""
+    clean, structure = list(text), list(text)
+    quote = None
+    escaped = False
+    line_comment = False
+    block_comment = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if line_comment:
+            if ch == "\n":
+                line_comment = False
+            else:
+                clean[i] = structure[i] = " "
+        elif block_comment:
+            if ch == "*" and nxt == "/":
+                clean[i] = clean[i + 1] = " "
+                structure[i] = structure[i + 1] = " "
+                i += 1
+                block_comment = False
+            elif ch != "\n":
+                clean[i] = structure[i] = " "
+        elif quote:
+            structure[i] = " "
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+        elif ch == '"':
+            quote = ch
+            structure[i] = " "
+        elif ch == "#" or (ch == "/" and nxt == "/"):
+            line_comment = True
+            clean[i] = structure[i] = " "
+            if ch == "/":
+                clean[i + 1] = structure[i + 1] = " "
+                i += 1
+        elif ch == "/" and nxt == "*":
+            block_comment = True
+            clean[i] = clean[i + 1] = " "
+            structure[i] = structure[i + 1] = " "
+            i += 1
+        i += 1
+    return "".join(clean), "".join(structure)
+
+def _matching_hcl_brace(masked: str, opening: int) -> int | None:
+    depth = 0
+    for position in range(opening, len(masked)):
+        if masked[position] == "{":
+            depth += 1
+        elif masked[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return position
+    return None
+
+def _terraform_ingress_findings(text: str, rel_path: str) -> list[Finding]:
+    """Flag only literal public SSH/RDP ingress inside AWS security-group resources."""
+    clean, structure = _terraform_masks(text)
+    findings: list[Finding] = []
+    source_lines = text.splitlines()
+    resource_re = re.compile(r'(?m)^\s*resource\s+"aws_security_group"\s+"[^"\n]+"\s*\{')
+    for resource in resource_re.finditer(clean):
+        resource_open = structure.find("{", resource.start(), resource.end())
+        resource_close = _matching_hcl_brace(structure, resource_open)
+        if resource_open < 0 or resource_close is None:
+            continue
+        body = structure[resource_open + 1:resource_close]
+        for ingress in re.finditer(r"\bingress\s*\{", body):
+            opening = resource_open + 1 + body.find("{", ingress.start(), ingress.end())
+            closing = _matching_hcl_brace(structure, opening)
+            if closing is None or closing > resource_close:
+                continue
+            block = clean[opening + 1:closing]
+            from_port = re.search(r"(?m)^\s*from_port\s*=\s*(-?\d+)\s*(?:\n|$)", block)
+            to_port = re.search(r"(?m)^\s*to_port\s*=\s*(-?\d+)\s*(?:\n|$)", block)
+            protocol = re.search(r'(?m)^\s*protocol\s*=\s*"([^"]+)"\s*(?:\n|$)', block)
+            public_range = re.search(r'(?s)\b(?:cidr_blocks|ipv6_cidr_blocks)\s*=\s*\[[^\]]*"(?:0\.0\.0\.0/0|::/0)"', block)
+            if not (from_port and to_port and protocol and public_range):
+                continue
+            start, end = int(from_port.group(1)), int(to_port.group(1))
+            proto = protocol.group(1).lower()
+            if start > end or proto not in {"tcp", "-1"}:
+                continue
+            exposed = []
+            if start <= 22 <= end:
+                exposed.append("SSH (22)")
+            if start <= 3389 <= end:
+                exposed.append("RDP (3389)")
+            if not exposed:
+                continue
+            line = text.count("\n", 0, resource_open + 1 + ingress.start()) + 1
+            evidence = source_lines[line - 1].strip() if line <= len(source_lines) else "ingress {"
+            findings.append(_finding("AF-TF-001", rel_path, line, 1, evidence, "high"))
+    return findings
+
 def analyze_text(text: str, rel_path: str) -> list[Finding]:
     findings: list[Finding] = []
     lines = text.splitlines()
@@ -78,6 +179,8 @@ def analyze_text(text: str, rel_path: str) -> list[Finding]:
                 findings.append(_finding("AF-JS-001", rel_path, n, 1, line.strip(), "medium"))
             if re.search(r"\.innerHTML\s*=", line):
                 findings.append(_finding("AF-JS-002", rel_path, n, 1, line.strip(), "low"))
+    if suffix == ".tf":
+        findings.extend(_terraform_ingress_findings(text, rel_path))
     return findings
 
 class _PythonVisitor(ast.NodeVisitor):
@@ -95,6 +198,16 @@ class _PythonVisitor(ast.NodeVisitor):
         line = getattr(node, "lineno", 1)
         evidence = self.lines[line-1].strip() if 0 < line <= len(self.lines) else "source expression"
         self.findings.append(_finding(rule_id, self.path, line, getattr(node, "col_offset", 0)+1, evidence, confidence))
+    def visit_Compare(self, node: ast.Compare) -> None:
+        operands = [node.left, *node.comparators]
+        names = [self._name(item).lower() for item in operands]
+        signature_context = any("signature" in name for name in names)
+        expected_value = any(any(marker in name for marker in ("expected", "computed", "calculated", "digest", "hmac", "mac")) for name in names)
+        equality = any(isinstance(operator, (ast.Eq, ast.NotEq)) for operator in node.ops)
+        if signature_context and expected_value and equality:
+            self.add("AF-PAY-001", node, "medium")
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         func = self._name(node.func)
         if func in {"eval", "exec", "builtins.eval", "builtins.exec"}:

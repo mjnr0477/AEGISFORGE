@@ -55,6 +55,7 @@ The trial engine evaluates proposed file replacements without changing the origi
 
 ~~~bash
 aegisforge engine trial ./my-project --plan trial.json --output trial-report.json
+aegisforge engine repair-trial ./my-project --output repair-trial.json
 ~~~
 
 Minimal plan shape:
@@ -94,6 +95,8 @@ Path("trial.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 The engine snapshots supported files, verifies every expected hash, builds baseline and candidate copies in a temporary directory, then compares static findings. It returns **accepted** when no new findings are detected, **review** when new lower-severity findings appear, and **rejected** when new critical/high findings or candidate scan errors appear. A rejected trial exits with code 1; operational errors exit with code 2. The temporary workspace is deleted after the report is built.
 
 A trial is not a functional test or proof of exploitability. Accepted changes still require human review and explicit application to the original project.
+
+The guided repair trial uses AegisForge's existing conservative repair rules to generate a hash-checked plan, then evaluates it in the disposable workspace. It does not apply the repair. It returns `no_changes` when no built-in repair is available. This is deterministic rule-based planning, not an external AI model.
 
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan.
 

@@ -24,6 +24,9 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertEqual(payload["summary"]["functions"],2)
         self.assertEqual(payload["summary"]["calls"],1)
         self.assertEqual(payload["summary"]["dependency_edges"],1)
+        self.assertEqual(payload["summary"]["cross_file_calls"],1)
+        self.assertEqual(payload["cross_file_calls"][0]["source_module"],"app")
+        self.assertEqual(payload["cross_file_calls"][0]["target_symbol"],"work")
         self.assertEqual(payload["dependencies"][0]["source_module"],"app")
         self.assertEqual(payload["dependencies"][0]["target_module"],"util")
         self.assertEqual(payload["modules"][0]["path"],"app.py")
@@ -32,13 +35,17 @@ class ProjectMapCLITests(unittest.TestCase):
     def test_map_text_output_lists_internal_dependency_edges(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "app.py").write_text("import helper\n", encoding="utf-8")
-            (root / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import helper\ndef start(): helper.work()\n",
+                encoding="utf-8",
+            )
+            (root / "helper.py").write_text("def work(): return 1\n", encoding="utf-8")
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 status = main(["map", str(root)])
         self.assertEqual(status, 0)
         self.assertIn("DEPENDENCY app -> helper", output.getvalue())
+        self.assertIn("CROSS-FILE app.start -> helper.work", output.getvalue())
 
     def test_map_command_reports_partial_analysis_with_exit_two(self):
         with tempfile.TemporaryDirectory() as temp:

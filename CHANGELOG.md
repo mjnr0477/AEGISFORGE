@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — scoped authority kernel
+
+- Added a default-deny capability model with exact-resource, subject-specific and expiring grants.
+- Required short-lived, exact-scope, single-use approval tokens for capabilities marked as mutating.
+- Added a hash-chained JSONL decision ledger that fails closed on detected tampering or write failures.
+- Added a policy-file loader and an `authority check` CLI command; checks evaluate permission only and never execute the requested operation.
+- Added tests for scope isolation, expiration, approval reuse, policy validation, audit integrity and CLI outcomes.
+- Clarified that external service/device adapters and authenticated approval UX are separate future integrations.
+
+
 ## 0.1.7 — repository bootstrap
 
 - Added Python package metadata and module/console entry points.

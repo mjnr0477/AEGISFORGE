@@ -200,6 +200,35 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(result.cross_file_calls, [])
 
+    def test_does_not_resolve_function_local_import_as_module_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "def start():\\n"
+                "    import service as svc\\n"
+                "    svc.execute()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+        self.assertEqual(result.modules[0].imports[0].scope, "start")
+
+    def test_does_not_resolve_module_alias_after_module_level_rebinding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import service as svc\\n"
+                "svc = replacement\\n"
+                "def start(): svc.execute()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_labels_package_symbol_and_submodule_name_collisions_ambiguous(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -47,6 +47,16 @@ class DependencyRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ImportCycleEdgeRecord:
+    source_module: str
+    target_module: str
+    line: int
+    import_kind: str
+    imported_name: str | None
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
 class CrossFileCallRecord:
     source_module: str
     caller: str
@@ -64,6 +74,7 @@ class ImportCycleRecord:
     resolution: str
     edge_count: int
     possible_edges: int
+    edges: tuple[ImportCycleEdgeRecord, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,6 +366,7 @@ class ProjectMap:
                 {
                     **asdict(item),
                     "modules": list(item.modules),
+                    "edges": [asdict(edge) for edge in item.edges],
                 }
                 for item in self.circular_dependencies
             ],
@@ -556,11 +568,23 @@ def _build_circular_dependencies(
             and item.source_module in members
             and item.target_module in members
         ]
+        cycle_edges = tuple(
+            ImportCycleEdgeRecord(
+                source_module=item.source_module,
+                target_module=item.target_module,
+                line=item.line,
+                import_kind=item.import_kind,
+                imported_name=item.imported_name,
+                resolution=item.resolution,
+            )
+            for item in internal_edges
+        )
         records.append(ImportCycleRecord(
             modules=component,
             resolution="direct",
-            edge_count=len(internal_edges),
+            edge_count=len(cycle_edges),
             possible_edges=0,
+            edges=cycle_edges,
         ))
 
     for component in all_components:
@@ -573,11 +597,23 @@ def _build_circular_dependencies(
         ]
         possible_count = sum(item.resolution != "direct" for item in internal_edges)
         if possible_count:
+            cycle_edges = tuple(
+                ImportCycleEdgeRecord(
+                    source_module=item.source_module,
+                    target_module=item.target_module,
+                    line=item.line,
+                    import_kind=item.import_kind,
+                    imported_name=item.imported_name,
+                    resolution=item.resolution,
+                )
+                for item in internal_edges
+            )
             records.append(ImportCycleRecord(
                 modules=component,
                 resolution="possible",
-                edge_count=len(internal_edges),
+                edge_count=len(cycle_edges),
                 possible_edges=possible_count,
+                edges=cycle_edges,
             ))
 
     return sorted(

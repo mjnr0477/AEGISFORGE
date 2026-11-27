@@ -250,7 +250,8 @@ class AuthorityKernel:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise AuthorityError(f"cannot read policy file: {exc}") from exc
-        if not isinstance(payload, dict) or set(payload) != {"version", "grants"} or payload["version"] != 1:
+        if (not isinstance(payload, dict) or set(payload) != {"version", "grants"}
+                or type(payload["version"]) is not int or payload["version"] != 1):
             raise AuthorityError("policy must contain only version=1 and grants")
         if not isinstance(payload["grants"], list):
             raise AuthorityError("policy grants must be a list")

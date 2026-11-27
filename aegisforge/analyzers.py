@@ -189,6 +189,7 @@ def analyze_text(text: str, rel_path: str) -> list[Finding]:
 class _PythonVisitor(ast.NodeVisitor):
     def __init__(self, path: str, lines: list[str]):
         self.path, self.lines, self.findings = path, lines, []
+        self.aliases: dict[str, str] = {}
     @staticmethod
     def _name(node: ast.AST) -> str:
         if isinstance(node, ast.Name):
@@ -197,6 +198,39 @@ class _PythonVisitor(ast.NodeVisitor):
             parent = _PythonVisitor._name(node.value)
             return f"{parent}.{node.attr}" if parent else node.attr
         return ""
+    def _canonical_name(self, node: ast.AST) -> str:
+        name = self._name(node)
+        if not name:
+            return ""
+        first, dot, rest = name.partition(".")
+        replacement = self.aliases.get(first, first)
+        return replacement + (dot + rest if dot else "")
+    def _visit_scoped(self, node: ast.AST) -> None:
+        previous_aliases = self.aliases.copy()
+        try:
+            self.generic_visit(node)
+        finally:
+            self.aliases = previous_aliases
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            if item.asname:
+                self.aliases[item.asname] = item.name
+            else:
+                bound_name = item.name.split(".", 1)[0]
+                self.aliases[bound_name] = bound_name
+        self.generic_visit(node)
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        for item in node.names:
+            local_name = item.asname or item.name
+            self.aliases[local_name] = f"{module}.{item.name}" if module else item.name
+        self.generic_visit(node)
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._visit_scoped(node)
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_scoped(node)
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_scoped(node)
     def add(self, rule_id: str, node: ast.AST, confidence: str = "medium") -> None:
         line = getattr(node, "lineno", 1)
         evidence = self.lines[line-1].strip() if 0 < line <= len(self.lines) else "source expression"
@@ -212,7 +246,7 @@ class _PythonVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        func = self._name(node.func)
+        func = self._canonical_name(node.func)
         if func in {"eval", "exec", "builtins.eval", "builtins.exec"}:
             self.add("AF-PY-001", node, "high")
         if func in {"subprocess.run", "subprocess.call", "subprocess.Popen", "subprocess.check_call", "subprocess.check_output"}:

@@ -142,6 +142,13 @@ def _run_map(args: argparse.Namespace) -> int:
                 lines.append(
                     f"  CYCLE [{group.resolution}] {', '.join(group.modules)} [{details}]"
                 )
+                for edge in group.edges:
+                    target = f"{edge.target_module}"
+                    imported = f" {edge.imported_name}" if edge.imported_name else ""
+                    lines.append(
+                        f"    {edge.source_module} -> {target} [line {edge.line}, "
+                        f"{edge.import_kind}{imported}, {edge.resolution}]"
+                    )
         if project_map.warnings:
             lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
         report = "\n".join(lines) + "\n"

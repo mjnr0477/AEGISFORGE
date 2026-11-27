@@ -229,6 +229,55 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(result.cross_file_calls, [])
 
+    def test_resolves_dotted_import_using_actual_package_binding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import pkg.service\n"
+                "def start(): pkg.service.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.cross_file_calls), 1)
+        self.assertEqual(result.cross_file_calls[0].target_module, "pkg.service")
+        self.assertEqual(result.cross_file_calls[0].target_symbol, "run")
+
+    def test_does_not_resolve_dotted_import_when_package_binding_is_shadowed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import pkg.service\n"
+                "def start(pkg): pkg.service.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
+    def test_does_not_resolve_duplicate_module_level_import_aliases(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "other.py").write_text("def run(): return 2\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import service as svc\n"
+                "import other as svc\n"
+                "def start(): svc.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_labels_package_symbol_and_submodule_name_collisions_ambiguous(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -174,6 +174,9 @@ class AuthorityKernelTests(unittest.TestCase):
             path.write_text('{"version": 2, "grants": [], "allow_all": true}', encoding="utf-8")
             with self.assertRaises(AuthorityError):
                 AuthorityKernel.from_policy_file(self.capabilities, path)
+            path.write_text('{"version": true, "grants": []}', encoding="utf-8")
+            with self.assertRaises(AuthorityError):
+                AuthorityKernel.from_policy_file(self.capabilities, path)
             path.write_text(json.dumps({
                 "version": 1,
                 "grants": [{

@@ -134,6 +134,13 @@ class AuthorityKernelTests(unittest.TestCase):
             with self.assertRaises(AuditLogIntegrityError):
                 self.make_kernel(audit_path=path)
 
+    def test_audit_entries_are_returned_as_defensive_copies(self):
+        kernel = self.make_kernel()
+        kernel.authorize(subject="operator", capability="project.inspect", resource="project:/repo-a")
+        view = kernel.audit_entries()
+        view[0]["event"]["allowed"] = False
+        self.assertTrue(kernel.audit_entries()[0]["event"]["allowed"])
+
     def test_audit_log_truncation_is_detected(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "audit.jsonl"

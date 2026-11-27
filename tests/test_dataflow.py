@@ -326,6 +326,16 @@ def endpoint(cursor):
         finding=next(item for item in findings if item.rule_id=="AF-FLOW-003")
         self.assertIn("source line 6",finding.message)
 
+    def test_does_not_bind_positional_argument_to_keyword_only_parameter(self):
+        source = '''\ndef execute(*, value):\n    os.system(value)\n\ndef endpoint():\n    command = request.args.get("command")\n    execute(command)\n'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_bind_keyword_to_positional_only_parameter(self):
+        source = '''\ndef execute(value, /):\n    os.system(value)\n\ndef endpoint():\n    command = request.args.get("command")\n    execute(value=command)\n'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
     def test_does_not_treat_unawaited_async_helper_as_executed(self):
         source = '''
 async def execute(command):

@@ -297,5 +297,34 @@ def endpoint():
         findings=analyze_python_flows(source,"app.py")
         self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
 
+    def test_traces_parameter_through_helper_return_into_eval(self):
+        source = '''
+def identity(value):
+    return value
+
+def endpoint():
+    command = request.args.get("code")
+    eval(identity(command))
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-001")
+        self.assertIn("source line 6",finding.message)
+
+    def test_traces_helper_argument_into_sql_query_text(self):
+        source = '''
+def run_query(cursor, query):
+    cursor.execute(query)
+
+def endpoint(cursor):
+    name = request.args.get("name")
+    query = "SELECT * FROM users WHERE name='" + name + "'"
+    run_query(cursor, query)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-003",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-003")
+        self.assertIn("source line 7",finding.message)
+
 if __name__ == "__main__":
     unittest.main()

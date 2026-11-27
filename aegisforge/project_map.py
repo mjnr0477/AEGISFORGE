@@ -45,6 +45,18 @@ class DependencyRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class CrossFileCallRecord:
+    source_module: str
+    caller: str
+    callee: str
+    target_module: str
+    target_symbol: str
+    line: int
+    column: int
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
 class ModuleRecord:
     module: str
     path: str
@@ -52,12 +64,77 @@ class ModuleRecord:
     symbols: tuple[SymbolRecord, ...]
     calls: tuple[CallRecord, ...]
 
+class _ScopeBindingCollector(ast.NodeVisitor):
+    """Collect names bound in one scope while leaving nested scopes opaque."""
+
+    def __init__(self) -> None:
+        self.names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.names.add(node.id)
+
+    def visit_arg(self, node: ast.arg) -> None:
+        self.names.add(node.arg)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            self.names.add(item.asname or item.name.split(".", 1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            if item.name != "*":
+                self.names.add(item.asname or item.name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.names.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.names.add(node.name)
+        self.generic_visit(node)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.names.update(node.names)
+
+
+def _scope_bindings(node: ast.AST) -> set[str]:
+    collector = _ScopeBindingCollector()
+    arguments = getattr(node, "args", None)
+    if arguments is not None:
+        for argument in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs):
+            collector.names.add(argument.arg)
+        if arguments.vararg is not None:
+            collector.names.add(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            collector.names.add(arguments.kwarg.arg)
+    body = getattr(node, "body", [])
+    if isinstance(body, list):
+        for statement in body:
+            collector.visit(statement)
+    return collector.names
+
+
 class _ModuleVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.scope: list[str] = []
         self.imports: list[ImportRecord] = []
         self.symbols: list[SymbolRecord] = []
         self.calls: list[CallRecord] = []
+        self.scope_bindings: list[set[str]] = []
+        self.call_shadowed_names: dict[tuple[int, int], frozenset[str]] = {}
 
     @staticmethod
     def dotted_name(node: ast.AST) -> str:
@@ -85,7 +162,12 @@ class _ModuleVisitor(ast.NodeVisitor):
             parameters=parameters,
         ))
         self.scope.append(name)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self.scope_bindings.append(_scope_bindings(node))
+        else:
+            self.scope_bindings.append(set())
         self.generic_visit(node)
+        self.scope_bindings.pop()
         self.scope.pop()
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -130,12 +212,18 @@ class _ModuleVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         callee = self.dotted_name(node.func)
         if callee:
+            line = getattr(node, "lineno", 1)
+            column = getattr(node, "col_offset", 0) + 1
             self.calls.append(CallRecord(
                 caller=".".join(self.scope) or "<module>",
                 callee=callee,
-                line=getattr(node, "lineno", 1),
-                column=getattr(node, "col_offset", 0) + 1,
+                line=line,
+                column=column,
             ))
+            shadowed: set[str] = set()
+            for names in self.scope_bindings:
+                shadowed.update(names)
+            self.call_shadowed_names[(line, column)] = frozenset(shadowed)
         self.generic_visit(node)
 
 @dataclass(slots=True)
@@ -146,6 +234,7 @@ class ProjectMap:
     modules: list[ModuleRecord]
     warnings: list[str]
     dependencies: list[DependencyRecord] = field(default_factory=list)
+    cross_file_calls: list[CrossFileCallRecord] = field(default_factory=list)
 
     @property
     def summary(self) -> dict[str, int]:
@@ -156,6 +245,7 @@ class ProjectMap:
             "functions": sum(symbol.kind in {"function", "async_function"} for module in self.modules for symbol in module.symbols),
             "calls": sum(len(module.calls) for module in self.modules),
             "dependency_edges": len(self.dependencies),
+            "cross_file_calls": len(self.cross_file_calls),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -168,6 +258,7 @@ class ProjectMap:
             "summary": self.summary,
             "modules": [asdict(module) for module in self.modules],
             "dependencies": [asdict(item) for item in self.dependencies],
+            "cross_file_calls": [asdict(item) for item in self.cross_file_calls],
             "warnings": list(self.warnings),
         }
 
@@ -267,6 +358,168 @@ def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
     )
 
 
+def _build_cross_file_calls(
+    modules: list[ModuleRecord],
+    dependencies: list[DependencyRecord],
+    call_shadowed_names: dict[str, dict[tuple[int, int], frozenset[str]]],
+) -> list[CrossFileCallRecord]:
+    """Resolve calls through explicit local imports; never guess dynamic dispatch."""
+    module_counts: dict[str, int] = {}
+    for module in modules:
+        module_counts[module.module] = module_counts.get(module.module, 0) + 1
+    known_modules = {name for name, count in module_counts.items() if count == 1}
+    module_by_name = {module.module: module for module in modules if module.module in known_modules}
+
+    symbols_by_module: dict[str, dict[str, list[SymbolRecord]]] = {}
+    for module in modules:
+        if module.module not in known_modules:
+            continue
+        by_name: dict[str, list[SymbolRecord]] = {}
+        for symbol in module.symbols:
+            by_name.setdefault(symbol.qualified_name, []).append(symbol)
+        symbols_by_module[module.module] = by_name
+
+    dependencies_by_source_line: dict[tuple[str, int], list[DependencyRecord]] = {}
+    for edge in dependencies:
+        dependencies_by_source_line.setdefault((edge.source_module, edge.line), []).append(edge)
+
+    results: list[CrossFileCallRecord] = []
+    for source in modules:
+        if source.module not in known_modules:
+            continue
+
+        # Each binding maps a local expression prefix to an imported module or symbol.
+        bindings: list[dict[str, str]] = []
+        for item in source.imports:
+            base = _absolute_import_base(source, item)
+            if base is None:
+                continue
+            if item.imported_name is None:
+                if base not in known_modules:
+                    continue
+                local_prefix = item.alias or item.module
+                if not local_prefix:
+                    continue
+                bindings.append({
+                    "local_prefix": local_prefix,
+                    "target_module": base,
+                    "target_symbol": "",
+                    "kind": "module",
+                    "resolution": "direct",
+                })
+                continue
+
+            if item.imported_name == "*":
+                continue
+            local_name = item.alias or item.imported_name
+            submodule = ".".join(part for part in (base, item.imported_name) if part)
+            has_package = base in known_modules
+            has_symbol = (
+                has_package
+                and len(symbols_by_module.get(base, {}).get(item.imported_name, [])) == 1
+            )
+            has_submodule = submodule in known_modules and submodule != base
+            if has_symbol:
+                bindings.append({
+                    "local_prefix": local_name,
+                    "target_module": base,
+                    "target_symbol": item.imported_name,
+                    "kind": "symbol",
+                    "resolution": "ambiguous" if has_submodule else "direct",
+                })
+            elif has_submodule:
+                bindings.append({
+                    "local_prefix": local_name,
+                    "target_module": submodule,
+                    "target_symbol": "",
+                    "kind": "module",
+                    "resolution": "possible_submodule",
+                })
+
+        shadowed_calls = call_shadowed_names.get(source.path, {})
+        for call in source.calls:
+            call_shadowed = shadowed_calls.get((call.line, call.column), frozenset())
+            candidates: list[CrossFileCallRecord] = []
+            for binding in bindings:
+                local_prefix = binding["local_prefix"]
+                if local_prefix in call_shadowed:
+                    continue
+
+                target_module = binding["target_module"]
+                binding_kind = binding["kind"]
+                binding_resolution = binding["resolution"]
+                target_symbol_prefix = binding["target_symbol"]
+
+                if binding_kind == "symbol":
+                    if call.callee == local_prefix:
+                        symbol_names = [target_symbol_prefix]
+                    elif call.callee.startswith(local_prefix + "."):
+                        suffix = call.callee[len(local_prefix) + 1:]
+                        symbol_names = [target_symbol_prefix + "." + suffix]
+                    else:
+                        continue
+                    for symbol_name in symbol_names:
+                        matches = symbols_by_module.get(target_module, {}).get(symbol_name, [])
+                        if len(matches) == 1:
+                            candidates.append(CrossFileCallRecord(
+                                source_module=source.module,
+                                caller=call.caller,
+                                callee=call.callee,
+                                target_module=target_module,
+                                target_symbol=symbol_name,
+                                line=call.line,
+                                column=call.column,
+                                resolution=binding_resolution,
+                            ))
+                    continue
+
+                if not call.callee.startswith(local_prefix + "."):
+                    continue
+                suffix = call.callee[len(local_prefix) + 1:].split(".")
+                # Prefer the deepest uniquely indexed submodule whose remainder
+                # names exactly one symbol. Shorter matches are not inferred.
+                matches_for_binding: list[tuple[int, str, str]] = []
+                for depth in range(len(suffix)):
+                    candidate_module = ".".join([target_module, *suffix[:depth]]) if depth else target_module
+                    symbol_name = ".".join(suffix[depth:])
+                    if candidate_module not in known_modules or not symbol_name:
+                        continue
+                    if len(symbols_by_module.get(candidate_module, {}).get(symbol_name, [])) == 1:
+                        matches_for_binding.append((depth, candidate_module, symbol_name))
+                if matches_for_binding:
+                    deepest = max(item[0] for item in matches_for_binding)
+                    deepest_matches = [item for item in matches_for_binding if item[0] == deepest]
+                    if len(deepest_matches) == 1:
+                        _, resolved_module, resolved_symbol = deepest_matches[0]
+                        candidates.append(CrossFileCallRecord(
+                            source_module=source.module,
+                            caller=call.caller,
+                            callee=call.callee,
+                            target_module=resolved_module,
+                            target_symbol=resolved_symbol,
+                            line=call.line,
+                            column=call.column,
+                            resolution=binding_resolution,
+                        ))
+
+            # Multiple import bindings that could explain the same call are not
+            # collapsed into an arbitrary target.
+            unique = {
+                (item.target_module, item.target_symbol, item.resolution): item
+                for item in candidates
+            }
+            if len(unique) == 1:
+                results.append(next(iter(unique.values())))
+
+    return sorted(
+        results,
+        key=lambda item: (
+            item.source_module, item.line, item.column,
+            item.target_module, item.target_symbol,
+        ),
+    )
+
+
 def build_project_map(target: str | Path) -> ProjectMap:
     """Build a bounded structural index of Python files without importing them."""
     root = Path(target).expanduser().resolve()
@@ -277,6 +530,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
 
     paths, skipped, warnings = collect_files(root)
     modules: list[ModuleRecord] = []
+    call_shadowed_names: dict[str, dict[tuple[int, int], frozenset[str]]] = {}
     scanned = 0
     for path in paths:
         if path.suffix.lower() not in {".py", ".pyw"}:
@@ -297,6 +551,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
             continue
         visitor = _ModuleVisitor()
         visitor.visit(tree)
+        call_shadowed_names[relative] = visitor.call_shadowed_names
         modules.append(ModuleRecord(
             module=_module_name(relative),
             path=relative,
@@ -306,6 +561,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
         ))
     modules.sort(key=lambda item: item.path)
     dependencies = _build_dependencies(modules)
+    cross_file_calls = _build_cross_file_calls(modules, dependencies, call_shadowed_names)
     return ProjectMap(
         project=root.name,
         scanned_files=scanned,
@@ -313,4 +569,5 @@ def build_project_map(target: str | Path) -> ProjectMap:
         modules=modules,
         warnings=warnings,
         dependencies=dependencies,
+        cross_file_calls=cross_file_calls,
     )

@@ -47,6 +47,18 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertIn("DEPENDENCY app -> helper", output.getvalue())
         self.assertIn("CROSS-FILE app.start -> helper.work", output.getvalue())
 
+    def test_map_text_output_lists_circular_import_groups(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "alpha.py").write_text("import beta\n", encoding="utf-8")
+            (root / "beta.py").write_text("import alpha\n", encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status = main(["map", str(root)])
+        self.assertEqual(status, 0)
+        self.assertIn("CIRCULAR IMPORT GROUPS", output.getvalue())
+        self.assertIn("CYCLE [direct] alpha, beta [edges=2]", output.getvalue())
+
     def test_map_command_reports_partial_analysis_with_exit_two(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

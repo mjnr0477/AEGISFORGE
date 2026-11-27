@@ -133,6 +133,15 @@ def _run_map(args: argparse.Namespace) -> int:
                     f"{call.target_module}.{call.target_symbol}"
                     f" [line {call.line}]{resolution}"
                 )
+        if project_map.circular_dependencies:
+            lines.extend(["", "CIRCULAR IMPORT GROUPS"])
+            for group in project_map.circular_dependencies:
+                details = f"edges={group.edge_count}"
+                if group.possible_edges:
+                    details += f", possible={group.possible_edges}"
+                lines.append(
+                    f"  CYCLE [{group.resolution}] {', '.join(group.modules)} [{details}]"
+                )
         if project_map.warnings:
             lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
         report = "\n".join(lines) + "\n"
@@ -187,7 +196,8 @@ def _run_mission(args: argparse.Namespace) -> int:
                 f"{mapped['modules']} modules, {mapped['classes']} classes, "
                 f"{mapped['functions']} functions, {mapped['calls']} call sites, "
                 f"{mapped['dependency_edges']} internal dependency edges, "
-                f"{mapped['cross_file_calls']} cross-file calls"
+                f"{mapped['cross_file_calls']} cross-file calls, "
+                f"{mapped['circular_dependency_groups']} circular import groups"
             )
         for step in result.steps:
             mutation = " [MUTATING]" if step.mutates else ""

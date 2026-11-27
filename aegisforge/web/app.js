@@ -186,6 +186,16 @@ function renderProjectMap(projectMap) {
       row.append(element("span", "project-dependency-meta",
         details + " · " + cycle.edge_count + " edge(s)" +
         (cycle.possible_edges ? " · " + cycle.possible_edges + " uncertain" : "")));
+      for (const edge of (cycle.edges || []).slice(0, 8)) {
+        const imported = edge.imported_name ? " " + edge.imported_name : "";
+        row.append(element("span", "project-dependency-meta",
+          edge.source_module + " → " + edge.target_module +
+          " · line " + edge.line + " · " + edge.import_kind + imported));
+      }
+      if ((cycle.edges || []).length > 8) {
+        row.append(element("span", "project-dependency-meta",
+          "And " + ((cycle.edges || []).length - 8) + " more import edge(s)."));
+      }
       modules.append(row);
     }
     if (cycles.length > 16) {

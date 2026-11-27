@@ -56,6 +56,17 @@ class ArchiveScanTests(unittest.TestCase):
         self.assertEqual(call["target_symbol"],"execute")
         self.assertNotIn("aegisforge-upload-",str(project_map))
 
+    def test_scan_includes_circular_import_groups_in_python_project_map(self):
+        archive=make_zip([
+            ("project/a.py","import project.b\n"),
+            ("project/b.py","import project.a\n"),
+        ])
+        result=scan_archive_bytes(archive)
+        cycles=result["project_map"]["circular_dependencies"]
+        self.assertEqual(len(cycles),1)
+        self.assertEqual(cycles[0]["modules"],["project.a","project.b"])
+        self.assertEqual(cycles[0]["resolution"],"direct")
+
     def test_rejects_parent_traversal_paths(self):
         archive=make_zip([("../outside.py","eval(x)\n")])
         with self.assertRaisesRegex(ValueError,"unsafe archive path"):

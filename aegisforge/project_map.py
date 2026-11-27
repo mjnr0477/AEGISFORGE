@@ -475,7 +475,7 @@ def _build_cross_file_calls(
             has_package = base in known_modules
             has_symbol = (
                 has_package
-                and len(symbols_by_module.get(base, {}).get(item.imported_name, [])) == 1
+                and bool(symbols_by_module.get(base, {}).get(item.imported_name, []))
             )
             has_submodule = submodule in known_modules and submodule != base
             if has_symbol:

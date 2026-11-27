@@ -63,6 +63,73 @@ class _FunctionSummary:
     sink_flows: tuple[_SinkFlow, ...]
 
 
+class _LocalBindingCollector(ast.NodeVisitor):
+    """Collect names bound in one lexical scope without entering nested scopes."""
+
+    def __init__(self) -> None:
+        self.names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.names.add(node.id)
+
+    def visit_arg(self, node: ast.arg) -> None:
+        self.names.add(node.arg)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            self.names.add(item.asname or item.name.split(".", 1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            self.names.add(item.asname or item.name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.names.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        # Lambda parameters and assignments belong to the lambda's own scope.
+        return
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.names.update(node.names)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.names.add(node.name)
+        self.generic_visit(node)
+
+
+def _local_binding_names(node: ast.AST) -> set[str]:
+    """Return names that can shadow module helpers within this lexical scope."""
+    collector = _LocalBindingCollector()
+    args = getattr(node, "args", None)
+    if args is not None:
+        for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+            collector.names.add(argument.arg)
+        if args.vararg is not None:
+            collector.names.add(args.vararg.arg)
+        if args.kwarg is not None:
+            collector.names.add(args.kwarg.arg)
+
+    body = getattr(node, "body", [])
+    if isinstance(body, list):
+        for statement in body:
+            collector.visit(statement)
+    elif isinstance(body, ast.AST):
+        collector.visit(body)
+    return collector.names
+
+
 class _FlowVisitor(ast.NodeVisitor):
     def __init__(
         self,
@@ -73,6 +140,7 @@ class _FlowVisitor(ast.NodeVisitor):
         self.path = path
         self.lines = source.splitlines()
         self.function_summaries = function_summaries or {}
+        self.shadowed_summaries: set[str] = set()
         self.sink_flows: list[_SinkFlow] = []
         self.return_origins: set[int] = set()
         self.tainted_names: set[str] = set()
@@ -100,6 +168,11 @@ class _FlowVisitor(ast.NodeVisitor):
         replacement = self.aliases.get(first, first)
         return replacement + (dot + rest if dot else "")
 
+    def _summary_for_call(self, function: str) -> _FunctionSummary | None:
+        if "." in function or function in self.shadowed_summaries or "*" in self.shadowed_summaries:
+            return None
+        return self.function_summaries.get(function)
+
     def _is_source_name(self, name: str) -> bool:
         # import flask as f; f.request.args is equivalent to the common
         # from flask import request spelling.
@@ -123,7 +196,7 @@ class _FlowVisitor(ast.NodeVisitor):
             function = self._canonical_name(node.func)
             if function in SOURCE_CALLS or self._is_source_name(function):
                 return {max(1, getattr(node, "lineno", 1))}
-            summary = self.function_summaries.get(function) if "." not in function else None
+            summary = self._summary_for_call(function)
             if summary is not None:
                 return self._substitute_origins(
                     summary.return_origins, node, summary.parameters,
@@ -243,6 +316,8 @@ class _FlowVisitor(ast.NodeVisitor):
         previous_aliases = self.aliases.copy()
         previous_returns = self.return_origins
         previous_flows = self.sink_flows
+        previous_shadowed_summaries = self.shadowed_summaries
+        self.shadowed_summaries = _local_binding_names(node)
         self.tainted_names = set()
         self.taint_sources = {}
         self.return_origins = set()
@@ -257,6 +332,7 @@ class _FlowVisitor(ast.NodeVisitor):
             self.aliases = previous_aliases
             self.return_origins = previous_returns
             self.sink_flows = previous_flows
+            self.shadowed_summaries = previous_shadowed_summaries
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._visit_nested_scope(node, node.name)
@@ -331,7 +407,7 @@ class _FlowVisitor(ast.NodeVisitor):
             if origins:
                 self._add("AF-FLOW-003", node, f"{function}() query text", origins)
 
-        summary = self.function_summaries.get(function) if "." not in function else None
+        summary = self._summary_for_call(function)
         if summary is not None:
             for flow in summary.sink_flows:
                 origins = self._substitute_origins(
@@ -380,6 +456,7 @@ def _summarize_function(
     summaries: dict[str, _FunctionSummary],
 ) -> _FunctionSummary:
     visitor = _FlowVisitor(source, relative_path, summaries)
+    visitor.shadowed_summaries = _local_binding_names(function)
     visitor.aliases.update(module_aliases)
     parameters = _function_parameters(function)
     visitor.tainted_names.update(parameters)

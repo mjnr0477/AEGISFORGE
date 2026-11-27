@@ -389,6 +389,11 @@ class AuthorityKernel:
             }, now)
             return Decision(allowed, subject, capability, resource, reason, sequence)
 
+    def capability_is_mutating(self, capability: str) -> bool | None:
+        """Return a capability's mutation classification, or None when unknown."""
+        spec = self._capabilities.get(capability)
+        return spec.mutates if spec is not None else None
+
     def audit_entries(self) -> list[dict[str, object]]:
         """Return a copy of verified decision-log entries."""
         return self._audit.entries()

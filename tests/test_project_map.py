@@ -136,6 +136,87 @@ class ProjectMapTests(unittest.TestCase):
             for item in result.dependencies
         ))
 
+    def test_resolves_imported_function_and_module_calls_across_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text(
+                "def execute(): return 1\\n"
+                "class Runner:\\n"
+                "    def run(self): return execute()\\n",
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "from service import execute as invoke\\n"
+                "import service as svc\\n"
+                "def start():\\n"
+                "    invoke()\\n"
+                "    svc.execute()\\n"
+                "    svc.Runner.run()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        calls = {(item.caller, item.callee, item.target_module, item.target_symbol, item.resolution)
+                 for item in result.cross_file_calls}
+        self.assertIn(("start", "invoke", "service", "execute", "direct"), calls)
+        self.assertIn(("start", "svc.execute", "service", "execute", "direct"), calls)
+        self.assertIn(("start", "svc.Runner.run", "service", "Runner.run", "direct"), calls)
+        self.assertEqual(result.summary["cross_file_calls"], 3)
+
+    def test_resolves_calls_through_possible_submodule_imports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "worker.py").write_text("def run(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from pkg import worker as imported_worker\\n"
+                "def start(): imported_worker.run()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.cross_file_calls), 1)
+        call = result.cross_file_calls[0]
+        self.assertEqual(call.source_module, "app")
+        self.assertEqual(call.target_module, "pkg.worker")
+        self.assertEqual(call.target_symbol, "run")
+        self.assertEqual(call.resolution, "possible_submodule")
+
+    def test_does_not_resolve_import_aliases_shadowed_in_function_scopes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from service import execute as invoke\\n"
+                "def parameter_shadow(invoke): invoke()\\n"
+                "def assignment_shadow():\\n"
+                "    invoke = safe_callable\\n"
+                "    invoke()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
+    def test_labels_package_symbol_and_submodule_name_collisions_ambiguous(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("def worker(): return 1\\n", encoding="utf-8")
+            (package / "worker.py").write_text("def run(): return 2\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from pkg import worker\\n"
+                "def start(): worker()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.cross_file_calls), 1)
+        self.assertEqual(result.cross_file_calls[0].resolution, "ambiguous")
+
     def test_reports_syntax_failures_instead_of_silently_omitting_them(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

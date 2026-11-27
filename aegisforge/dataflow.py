@@ -73,6 +73,10 @@ class _FlowVisitor(ast.NodeVisitor):
         return replacement + (dot + rest if dot else "")
 
     def _is_source_name(self, name: str) -> bool:
+        # import flask as f; f.request.args is equivalent to the common
+        # from flask import request spelling.
+        if name.startswith("flask.request."):
+            name = name[len("flask."):]
         return any(name == prefix or name.startswith(prefix + ".") for prefix in SOURCE_PREFIXES)
 
     def _taint_origins(self, node: ast.AST | None) -> set[int]:
@@ -141,59 +145,53 @@ class _FlowVisitor(ast.NodeVisitor):
         ))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if node.module == "flask":
-            for item in node.names:
-                if item.name == "request":
-                    self.aliases[item.asname or item.name] = "request"
+        module = node.module or ""
+        for item in node.names:
+            local_name = item.asname or item.name
+            if module == "flask" and item.name == "request":
+                canonical_name = "request"
+            else:
+                canonical_name = f"{module}.{item.name}" if module else item.name
+            self.aliases[local_name] = canonical_name
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         for item in node.names:
-            if item.name == "flask.request":
-                self.aliases[item.asname or item.name] = "request"
+            if item.asname:
+                local_name = item.asname
+                canonical_name = "request" if item.name == "flask.request" else item.name
+            else:
+                local_name = item.name.split(".", 1)[0]
+                canonical_name = local_name
+            self.aliases[local_name] = canonical_name
         self.generic_visit(node)
+
+    def _visit_nested_scope(self, node: ast.AST, label: str) -> None:
+        previous_taint = self.tainted_names
+        previous_sources = self.taint_sources
+        previous_aliases = self.aliases.copy()
+        self.tainted_names = set()
+        self.taint_sources = {}
+        self.scope.append(label)
+        try:
+            self.generic_visit(node)
+        finally:
+            self.scope.pop()
+            self.tainted_names = previous_taint
+            self.taint_sources = previous_sources
+            self.aliases = previous_aliases
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        previous_taint = self.tainted_names
-        previous_sources = self.taint_sources
-        self.tainted_names = set()
-        self.taint_sources = {}
-        self.scope.append(node.name)
-        self.generic_visit(node)
-        self.scope.pop()
-        self.tainted_names = previous_taint
-        self.taint_sources = previous_sources
+        self._visit_nested_scope(node, node.name)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        previous_taint = self.tainted_names
-        previous_sources = self.taint_sources
-        self.tainted_names = set()
-        self.taint_sources = {}
-        self.scope.append(node.name)
-        self.generic_visit(node)
-        self.scope.pop()
-        self.tainted_names = previous_taint
-        self.taint_sources = previous_sources
+        self._visit_nested_scope(node, node.name)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        previous_taint = self.tainted_names
-        previous_sources = self.taint_sources
-        self.tainted_names = set()
-        self.taint_sources = {}
-        self.scope.append(node.name)
-        self.generic_visit(node)
-        self.scope.pop()
-        self.tainted_names = previous_taint
-        self.taint_sources = previous_sources
+        self._visit_nested_scope(node, node.name)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
-        previous_taint = self.tainted_names
-        previous_sources = self.taint_sources
-        self.tainted_names = set()
-        self.taint_sources = {}
-        self.generic_visit(node)
-        self.tainted_names = previous_taint
-        self.taint_sources = previous_sources
+        self._visit_nested_scope(node, "<lambda>")
 
     def visit_Assign(self, node: ast.Assign) -> None:
         origins = self._taint_origins(node.value)

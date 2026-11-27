@@ -3,6 +3,9 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
+from datetime import datetime, timedelta, timezone
+
+from aegisforge.authority import AuthorityKernel, CapabilitySpec, Grant
 from aegisforge.autonomy import (
     ActionTool,
     ToolPermissionError,
@@ -23,6 +26,76 @@ class ToolRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ToolPermissionError,"explicit approval"):
             registry.call("change_project")
         self.assertEqual(registry.call("change_project",approve_mutation=True),"changed")
+
+    def test_authorized_read_only_tool_runs_only_with_exact_grant(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "inspect_project", "Read-only example", lambda value: value.upper(),
+            mutates=False, capability="project.inspect",
+        ))
+        self.assertEqual(
+            registry.call_authorized(
+                "inspect_project", "ready", authority=authority,
+                subject="operator", resource="project:/repo",
+            ),
+            "READY",
+        )
+        with self.assertRaises(ToolPermissionError):
+            registry.call_authorized(
+                "inspect_project", "no", authority=authority,
+                subject="operator", resource="project:/other",
+            )
+
+    def test_authorized_mutation_requires_single_use_approval(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.repair", "Repair project", mutates=True)],
+            [Grant("operator", "project.repair", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "repair_project", "Writes project files", lambda: "repaired",
+            mutates=True, capability="project.repair",
+        ))
+        with self.assertRaisesRegex(ToolPermissionError, "approval_required"):
+            registry.call_authorized(
+                "repair_project", authority=authority,
+                subject="operator", resource="project:/repo",
+            )
+        token = authority.issue_approval(
+            subject="operator", capability="project.repair",
+            resource="project:/repo", approver="owner",
+        )
+        self.assertEqual(
+            registry.call_authorized(
+                "repair_project", authority=authority,
+                subject="operator", resource="project:/repo", approval_token=token,
+            ),
+            "repaired",
+        )
+        with self.assertRaisesRegex(ToolPermissionError, "invalid_or_consumed_approval"):
+            registry.call_authorized(
+                "repair_project", authority=authority,
+                subject="operator", resource="project:/repo", approval_token=token,
+            )
+
+    def test_authorized_call_rejects_tool_capability_mutation_mismatch(self):
+        authority = AuthorityKernel([CapabilitySpec("project.inspect", "Read-only")])
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "unsafe_tool", "Incorrectly classified", lambda: None,
+            mutates=True, capability="project.inspect",
+        ))
+        with self.assertRaisesRegex(ToolPermissionError, "classification does not match"):
+            registry.call_authorized(
+                "unsafe_tool", authority=authority,
+                subject="operator", resource="project:/repo",
+            )
 
     def test_rejects_duplicate_tool_names(self):
         registry=ToolRegistry()

@@ -326,5 +326,17 @@ def endpoint(cursor):
         finding=next(item for item in findings if item.rule_id=="AF-FLOW-003")
         self.assertIn("source line 6",finding.message)
 
+    def test_does_not_treat_unawaited_async_helper_as_executed(self):
+        source = '''
+async def execute(command):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
 if __name__ == "__main__":
     unittest.main()

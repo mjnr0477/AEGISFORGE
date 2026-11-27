@@ -57,6 +57,8 @@ class _SinkFlow:
 @dataclass(frozen=True, slots=True)
 class _FunctionSummary:
     parameters: tuple[str, ...]
+    positional_only_count: int
+    positional_count: int
     return_origins: frozenset[int]
     sink_flows: tuple[_SinkFlow, ...]
 
@@ -123,7 +125,10 @@ class _FlowVisitor(ast.NodeVisitor):
                 return {max(1, getattr(node, "lineno", 1))}
             summary = self.function_summaries.get(function) if "." not in function else None
             if summary is not None:
-                return self._substitute_origins(summary.return_origins, node, summary.parameters)
+                return self._substitute_origins(
+                    summary.return_origins, node, summary.parameters,
+                    summary.positional_only_count, summary.positional_count,
+                )
         origins: set[int] = set()
         for child in ast.iter_child_nodes(node):
             origins.update(self._taint_origins(child))
@@ -137,14 +142,17 @@ class _FlowVisitor(ast.NodeVisitor):
         origins: frozenset[int] | set[int],
         call: ast.Call,
         parameters: tuple[str, ...],
+        positional_only_count: int,
+        positional_count: int,
     ) -> set[int]:
-        """Replace negative parameter markers with taint from call-site arguments."""
+        """Replace parameter markers using Python's basic argument binding rules."""
         arguments: dict[str, ast.AST] = {}
-        for name, value in zip(parameters, call.args):
+        for name, value in zip(parameters[:positional_count], call.args):
             if not isinstance(value, ast.Starred):
                 arguments[name] = value
+        keyword_bindable = parameters[positional_only_count:]
         for keyword in call.keywords:
-            if keyword.arg in parameters:
+            if keyword.arg in keyword_bindable and keyword.arg not in arguments:
                 arguments[keyword.arg] = keyword.value
         resolved: set[int] = set()
         for origin in origins:
@@ -324,7 +332,10 @@ class _FlowVisitor(ast.NodeVisitor):
         summary = self.function_summaries.get(function) if "." not in function else None
         if summary is not None:
             for flow in summary.sink_flows:
-                origins = self._substitute_origins(flow.origins, node, summary.parameters)
+                origins = self._substitute_origins(
+                    flow.origins, node, summary.parameters,
+                    summary.positional_only_count, summary.positional_count,
+                )
                 if origins:
                     self._add(flow.rule_id, flow.node, flow.sink_name, origins)
 
@@ -388,6 +399,8 @@ def _summarize_function(
         unique_flows[key] = flow
     return _FunctionSummary(
         parameters=parameters,
+        positional_only_count=len(function.args.posonlyargs),
+        positional_count=len(function.args.posonlyargs) + len(function.args.args),
         return_origins=frozenset(visitor.return_origins),
         sink_flows=tuple(unique_flows.values()),
     )

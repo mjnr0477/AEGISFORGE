@@ -324,7 +324,7 @@ def endpoint(cursor):
         findings=analyze_python_flows(source,"app.py")
         self.assertIn("AF-FLOW-003",{item.rule_id for item in findings})
         finding=next(item for item in findings if item.rule_id=="AF-FLOW-003")
-        self.assertIn("source line 7",finding.message)
+        self.assertIn("source line 6",finding.message)
 
 if __name__ == "__main__":
     unittest.main()

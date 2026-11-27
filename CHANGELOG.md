@@ -4,8 +4,6 @@
 - Preserve conservative limits: at most 12 summary rounds; no async-helper, method, nested-function, dynamic-dispatch, star-argument, or cross-file call resolution.
 - Add regression tests for helper sinks, multi-helper chains, tainted returns, keyword arguments, constants, and ambiguous duplicate function names.
 
-## Unreleased
-
 - Resolve common Python import aliases in static security checks and source-to-sink analysis, including module aliases and explicitly imported sink functions.
 - Keep function-, class-, and lambda-local alias mappings scoped during data-flow traversal to reduce cross-scope false positives.
 - Add positive and negative regression tests for aliased subprocess, OS command, Flask request, eval, and TLS-verification calls.

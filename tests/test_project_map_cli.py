@@ -14,7 +14,7 @@ class ProjectMapCLITests(unittest.TestCase):
             root=Path(temp)/"sample"
             root.mkdir()
             (root/"app.py").write_text("import util\n\ndef start():\n    return util.work()\n",encoding="utf-8")
-            (root/"util.py").write_text("def work(): return 1\n",encoding="utf-8")
+            (root/"util.py").write_text("import app\ndef work(): return 1\n",encoding="utf-8")
             output=io.StringIO()
             with contextlib.redirect_stdout(output):
                 status=main(["map",str(root),"--format","json"])
@@ -25,6 +25,9 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertEqual(payload["summary"]["calls"],1)
         self.assertEqual(payload["summary"]["dependency_edges"],1)
         self.assertEqual(payload["summary"]["cross_file_calls"],1)
+        self.assertEqual(payload["summary"]["circular_dependency_groups"],1)
+        self.assertEqual(payload["circular_dependencies"][0]["modules"],["app", "util"])
+        self.assertEqual(payload["circular_dependencies"][0]["resolution"],"direct")
         self.assertEqual(payload["cross_file_calls"][0]["source_module"],"app")
         self.assertEqual(payload["cross_file_calls"][0]["target_symbol"],"work")
         self.assertEqual(payload["dependencies"][0]["source_module"],"app")

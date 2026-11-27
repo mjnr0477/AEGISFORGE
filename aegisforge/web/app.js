@@ -98,7 +98,8 @@ function renderProjectMap(projectMap) {
     ["Classes", "classes"],
     ["Functions", "functions"],
     ["Call sites", "calls"],
-    ["Imports", "imports"]
+    ["Imports", "imports"],
+    ["Internal links", "dependency_edges"]
   ]) {
     const tile = element("div", "project-map-stat");
     tile.append(element("span", "project-map-count", summary[key] || 0));
@@ -129,6 +130,27 @@ function renderProjectMap(projectMap) {
     modules.append(element("div", "project-map-more",
       "And " + (indexed.length - visible.length) + " more module(s). Export JSON for the full index."));
   }
+
+  const dependencies = projectMap.dependencies || [];
+  modules.append(element("div", "project-map-list-heading", "INTERNAL DEPENDENCIES"));
+  if (!dependencies.length) {
+    modules.append(element("div", "empty-state", "No imports resolved to another indexed Python module."));
+  } else {
+    for (const dependency of dependencies.slice(0, 24)) {
+      const row = element("div", "project-dependency");
+      const relation = dependency.resolution === "possible_submodule" ? "possible submodule" : "direct import";
+      row.append(element("strong", "project-dependency-path",
+        dependency.source_module + " → " + dependency.target_module));
+      row.append(element("span", "project-dependency-meta",
+        "line " + dependency.line + " · " + relation));
+      modules.append(row);
+    }
+    if (dependencies.length > 24) {
+      modules.append(element("div", "project-map-more",
+        "And " + (dependencies.length - 24) + " more dependency edge(s). Export JSON for the full graph."));
+    }
+  }
+
   if ((projectMap.warnings || []).length) {
     modules.append(element("div", "project-map-warning",
       (projectMap.warnings || []).length + " module warning(s). Check the scan warnings below."));

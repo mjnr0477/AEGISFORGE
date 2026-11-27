@@ -157,7 +157,7 @@ h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.035em; }
 .project-map-heading { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 15px; }
 .project-map-heading h3 { margin: 6px 0 0; font-size: 17px; letter-spacing: -.025em; }
 .project-map-heading .step-state { flex-shrink: 0; }
-.project-map-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+.project-map-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
 .project-map-stat { min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 5px; background: #111719; }
 .project-map-count { display: block; color: var(--text); font: 700 19px var(--mono); font-variant-numeric: tabular-nums; }
 .project-map-label { display: block; margin-top: 4px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
@@ -177,4 +177,12 @@ h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.035em; }
   .project-map-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-module { align-items: start; flex-direction: column; gap: 5px; }
   .project-module-counts { text-align: left; }
+}
+
+.project-dependency { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid #2d383b; border-radius: 5px; background: #141a1d; }
+.project-dependency-path { min-width: 0; overflow-wrap: anywhere; color: #d9e0dd; font: 11px var(--mono); }
+.project-dependency-meta { flex-shrink: 0; color: var(--muted); font: 9px var(--mono); text-align: right; }
+@media (max-width: 390px) {
+  .project-dependency { align-items: start; flex-direction: column; gap: 5px; }
+  .project-dependency-meta { text-align: left; }
 }

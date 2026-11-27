@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a bounded internal Python import dependency map for absolute, package-relative, and namespace-package references.
+- Label ambiguous from-import submodule matches as possible and omit unresolved external, invalid-relative, and duplicate-module references.
+- Include dependency edges in JSON and text project maps, audit mission summaries, and the local browser workbench.
+- Keep dependency mapping AST-only; scanned project code is never imported or executed.
+
 ## 0.1.7 — repository bootstrap
 
 - Added Python package metadata and module/console entry points.

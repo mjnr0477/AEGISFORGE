@@ -115,6 +115,15 @@ def _run_map(args: argparse.Namespace) -> int:
                 lines.append(f"  {symbol.kind.upper()} {symbol.qualified_name} [lines {symbol.line}-{symbol.end_line}]{params}")
             for call in module.calls:
                 lines.append(f"  CALL {call.caller} -> {call.callee} [line {call.line}]")
+        if project_map.dependencies:
+            lines.extend(["", "INTERNAL DEPENDENCIES"])
+            for dependency in project_map.dependencies:
+                relation = " (possible submodule)" if dependency.resolution == "possible_submodule" else ""
+                imported = f" [{dependency.import_kind} {dependency.imported_name}]" if dependency.imported_name else " [import]"
+                lines.append(
+                    f"  DEPENDENCY {dependency.source_module} -> {dependency.target_module}"
+                    f" [line {dependency.line}]{imported}{relation}"
+                )
         if project_map.warnings:
             lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
         report = "\n".join(lines) + "\n"
@@ -167,7 +176,8 @@ def _run_mission(args: argparse.Namespace) -> int:
             print(
                 "Project map: "
                 f"{mapped['modules']} modules, {mapped['classes']} classes, "
-                f"{mapped['functions']} functions, {mapped['calls']} call sites"
+                f"{mapped['functions']} functions, {mapped['calls']} call sites, "
+                f"{mapped['dependency_edges']} internal dependency edges"
             )
         for step in result.steps:
             mutation = " [MUTATING]" if step.mutates else ""

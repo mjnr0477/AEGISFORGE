@@ -45,6 +45,97 @@ class ProjectMapTests(unittest.TestCase):
         self.assertIn("Worker",calls)
         self.assertIn("worker.run",calls)
 
+    def test_resolves_absolute_and_relative_internal_import_dependencies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "app.py").write_text(
+                "import pkg.service as service\n"
+                "from pkg import service as imported_service\n"
+                "from os import path\n",
+                encoding="utf-8",
+            )
+            package = root / "pkg"
+            (package / "sub").mkdir(parents=True)
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "service.py").write_text("def run(): pass\n", encoding="utf-8")
+            (package / "common.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (package / "consumer.py").write_text(
+                "from . import service\n"
+                "from .sub import worker\n",
+                encoding="utf-8",
+            )
+            (package / "sub" / "__init__.py").write_text("", encoding="utf-8")
+            (package / "sub" / "worker.py").write_text(
+                "from .. import common\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        edges = {
+            (item.source_module, item.target_module, item.resolution)
+            for item in result.dependencies
+        }
+        self.assertIn(("app", "pkg.service", "direct"), edges)
+        self.assertIn(("app", "pkg", "direct"), edges)
+        self.assertIn(("app", "pkg.service", "possible_submodule"), edges)
+        self.assertIn(("pkg.consumer", "pkg", "direct"), edges)
+        self.assertIn(("pkg.consumer", "pkg.service", "possible_submodule"), edges)
+        self.assertIn(("pkg.consumer", "pkg.sub", "direct"), edges)
+        self.assertIn(("pkg.consumer", "pkg.sub.worker", "possible_submodule"), edges)
+        self.assertIn(("pkg.sub.worker", "pkg", "direct"), edges)
+        self.assertIn(("pkg.sub.worker", "pkg.common", "possible_submodule"), edges)
+        self.assertFalse(any(item.target_module == "os" for item in result.dependencies))
+        self.assertEqual(result.summary["dependency_edges"], len(result.dependencies))
+
+    def test_resolves_internal_imports_from_namespace_packages(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "namespace" / "sub").mkdir(parents=True)
+            (root / "app.py").write_text("from namespace import service\n", encoding="utf-8")
+            (root / "namespace" / "service.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "namespace" / "sub" / "worker.py").write_text(
+                "from .. import service\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        edges = {(item.source_module, item.target_module, item.resolution) for item in result.dependencies}
+        self.assertIn(("app", "namespace.service", "possible_submodule"), edges)
+        self.assertIn(("namespace.sub.worker", "namespace.service", "possible_submodule"), edges)
+
+    def test_ignores_relative_imports_that_escape_the_package_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg" / "sub"
+            package.mkdir(parents=True)
+            (root / "common.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "pkg" / "sub" / "worker.py").write_text(
+                "from ... import common\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertFalse(any(
+            item.source_module == "pkg.sub.worker" and item.target_module == "common"
+            for item in result.dependencies
+        ))
+
+    def test_does_not_resolve_duplicate_module_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "tool").mkdir()
+            (root / "main.py").write_text("import tool\n", encoding="utf-8")
+            (root / "helper.py").write_text("VALUE = 0\n", encoding="utf-8")
+            (root / "tool.py").write_text("import helper\nVALUE = 1\n", encoding="utf-8")
+            (root / "tool" / "__init__.py").write_text("import helper\nVALUE = 2\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertFalse(any(
+            item.target_module == "tool" or item.source_module == "tool"
+            for item in result.dependencies
+        ))
+
     def test_reports_syntax_failures_instead_of_silently_omitting_them(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

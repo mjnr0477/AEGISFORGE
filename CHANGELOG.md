@@ -1,3 +1,9 @@
+## Unreleased
+
+- Resolve common Python import aliases in static security checks and source-to-sink analysis, including module aliases and explicitly imported sink functions.
+- Keep function-, class-, and lambda-local alias mappings scoped during data-flow traversal to reduce cross-scope false positives.
+- Add positive and negative regression tests for aliased subprocess, OS command, Flask request, eval, and TLS-verification calls.
+
 # Changelog
 
 ## 0.1.7 — repository bootstrap

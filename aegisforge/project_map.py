@@ -187,14 +187,14 @@ def _package_parts(module: ModuleRecord) -> list[str]:
     return parts[:-1]
 
 
-def _absolute_import_base(importer: ModuleRecord, item: ImportRecord) -> str:
+def _absolute_import_base(importer: ModuleRecord, item: ImportRecord) -> str | None:
     if item.relative_level <= 0:
         return item.module
 
     package = _package_parts(importer)
+    if item.relative_level > len(package):
+        return None
     ascend = item.relative_level - 1
-    if ascend > len(package):
-        return ""
     parts = package[:len(package) - ascend]
     if item.module:
         parts.extend(part for part in item.module.split(".") if part)
@@ -207,12 +207,18 @@ def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
     A from-import can refer to a package attribute or a sibling submodule.
     Keep the package edge direct and label a matching submodule as possible.
     """
-    known_modules = {module.module for module in modules}
+    module_counts: dict[str, int] = {}
+    for module in modules:
+        module_counts[module.module] = module_counts.get(module.module, 0) + 1
+    # A file and a same-named package can collide; do not choose one arbitrarily.
+    known_modules = {name for name, count in module_counts.items() if count == 1}
     dependencies: list[DependencyRecord] = []
 
     for importer in modules:
         for item in importer.imports:
             base = _absolute_import_base(importer, item)
+            if base is None:
+                continue
             if item.imported_name is None:
                 if base and base in known_modules:
                     dependencies.append(DependencyRecord(

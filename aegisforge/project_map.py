@@ -360,7 +360,6 @@ def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
 
 def _build_cross_file_calls(
     modules: list[ModuleRecord],
-    dependencies: list[DependencyRecord],
     call_shadowed_names: dict[str, dict[tuple[int, int], frozenset[str]]],
 ) -> list[CrossFileCallRecord]:
     """Resolve calls through explicit local imports; never guess dynamic dispatch."""
@@ -368,8 +367,6 @@ def _build_cross_file_calls(
     for module in modules:
         module_counts[module.module] = module_counts.get(module.module, 0) + 1
     known_modules = {name for name, count in module_counts.items() if count == 1}
-    module_by_name = {module.module: module for module in modules if module.module in known_modules}
-
     symbols_by_module: dict[str, dict[str, list[SymbolRecord]]] = {}
     for module in modules:
         if module.module not in known_modules:
@@ -378,10 +375,6 @@ def _build_cross_file_calls(
         for symbol in module.symbols:
             by_name.setdefault(symbol.qualified_name, []).append(symbol)
         symbols_by_module[module.module] = by_name
-
-    dependencies_by_source_line: dict[tuple[str, int], list[DependencyRecord]] = {}
-    for edge in dependencies:
-        dependencies_by_source_line.setdefault((edge.source_module, edge.line), []).append(edge)
 
     results: list[CrossFileCallRecord] = []
     for source in modules:
@@ -561,7 +554,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
         ))
     modules.sort(key=lambda item: item.path)
     dependencies = _build_dependencies(modules)
-    cross_file_calls = _build_cross_file_calls(modules, dependencies, call_shadowed_names)
+    cross_file_calls = _build_cross_file_calls(modules, call_shadowed_names)
     return ProjectMap(
         project=root.name,
         scanned_files=scanned,

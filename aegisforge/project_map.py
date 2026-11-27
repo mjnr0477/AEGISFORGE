@@ -101,41 +101,6 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_arg(self, node: ast.arg) -> None:
         self.names.add(node.arg)
 
-    def _visit_conditional(self, node: ast.AST) -> None:
-        self.conditional_depth += 1
-        try:
-            self.generic_visit(node)
-        finally:
-            self.conditional_depth -= 1
-
-    def visit_If(self, node: ast.If) -> None:
-        self._visit_conditional(node)
-
-    def visit_For(self, node: ast.For) -> None:
-        self._visit_conditional(node)
-
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self._visit_conditional(node)
-
-    def visit_While(self, node: ast.While) -> None:
-        self._visit_conditional(node)
-
-    def visit_With(self, node: ast.With) -> None:
-        self._visit_conditional(node)
-
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        self._visit_conditional(node)
-
-    def visit_Try(self, node: ast.Try) -> None:
-        self._visit_conditional(node)
-
-    if hasattr(ast, "TryStar"):
-        def visit_TryStar(self, node: ast.AST) -> None:
-            self._visit_conditional(node)
-
-    def visit_Match(self, node: ast.AST) -> None:
-        self._visit_conditional(node)
-
     def visit_Import(self, node: ast.Import) -> None:
         for item in node.names:
             self.names.add(item.asname or item.name.split(".", 1)[0])
@@ -226,6 +191,41 @@ class _ModuleVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Subscript):
             return _ModuleVisitor.dotted_name(node.value)
         return ""
+
+    def _visit_conditional(self, node: ast.AST) -> None:
+        self.conditional_depth += 1
+        try:
+            self.generic_visit(node)
+        finally:
+            self.conditional_depth -= 1
+
+    def visit_If(self, node: ast.If) -> None:
+        self._visit_conditional(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_conditional(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self._visit_conditional(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_conditional(node)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_conditional(node)
+
+    if hasattr(ast, "TryStar"):
+        def visit_TryStar(self, node: ast.AST) -> None:
+            self._visit_conditional(node)
+
+    def visit_Match(self, node: ast.AST) -> None:
+        self._visit_conditional(node)
 
     def _record_symbol(self, node: ast.AST, kind: str, name: str, parameters: int) -> None:
         parent = ".".join(self.scope) or None

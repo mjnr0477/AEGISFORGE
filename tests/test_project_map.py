@@ -91,16 +91,16 @@ class ProjectMapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "__init__.py").write_text(
-                "from . import service\\n"
-                "from .service import execute\\n"
-                "def start():\\n"
-                "    service.run()\\n"
-                "    execute()\\n",
+                "from . import service\n"
+                "from .service import execute\n"
+                "def start():\n"
+                "    service.run()\n"
+                "    execute()\n",
                 encoding="utf-8",
             )
             (root / "service.py").write_text(
-                "def run(): return 1\\n"
-                "def execute(): return 2\\n",
+                "def run(): return 1\n"
+                "def execute(): return 2\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)

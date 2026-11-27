@@ -157,7 +157,7 @@ h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.035em; }
 .project-map-heading { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 15px; }
 .project-map-heading h3 { margin: 6px 0 0; font-size: 17px; letter-spacing: -.025em; }
 .project-map-heading .step-state { flex-shrink: 0; }
-.project-map-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+.project-map-stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
 .project-map-stat { min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 5px; background: #111719; }
 .project-map-count { display: block; color: var(--text); font: 700 19px var(--mono); font-variant-numeric: tabular-nums; }
 .project-map-label { display: block; margin-top: 4px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .08em; }

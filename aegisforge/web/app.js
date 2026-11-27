@@ -99,7 +99,8 @@ function renderProjectMap(projectMap) {
     ["Functions", "functions"],
     ["Call sites", "calls"],
     ["Imports", "imports"],
-    ["Internal links", "dependency_edges"]
+    ["Internal links", "dependency_edges"],
+    ["Cross-file calls", "cross_file_calls"]
   ]) {
     const tile = element("div", "project-map-stat");
     tile.append(element("span", "project-map-count", summary[key] || 0));
@@ -148,6 +149,27 @@ function renderProjectMap(projectMap) {
     if (dependencies.length > 24) {
       modules.append(element("div", "project-map-more",
         "And " + (dependencies.length - 24) + " more dependency edge(s). Export JSON for the full graph."));
+    }
+  }
+
+  const crossCalls = projectMap.cross_file_calls || [];
+  modules.append(element("div", "project-map-list-heading", "CROSS-FILE CALLS"));
+  if (!crossCalls.length) {
+    modules.append(element("div", "empty-state", "No calls could be resolved confidently across indexed modules."));
+  } else {
+    for (const call of crossCalls.slice(0, 24)) {
+      const row = element("div", "project-dependency");
+      row.append(element("strong", "project-dependency-path",
+        call.source_module + "." + call.caller + " → " + call.target_module + "." + call.target_symbol));
+      const resolution = call.resolution === "direct" ? "direct import" :
+        call.resolution === "possible_submodule" ? "possible submodule" : "ambiguous import";
+      row.append(element("span", "project-dependency-meta",
+        "line " + call.line + " · " + resolution));
+      modules.append(row);
+    }
+    if (crossCalls.length > 24) {
+      modules.append(element("div", "project-map-more",
+        "And " + (crossCalls.length - 24) + " more cross-file call(s). Export JSON for the full graph."));
     }
   }
 

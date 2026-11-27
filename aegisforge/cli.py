@@ -124,6 +124,15 @@ def _run_map(args: argparse.Namespace) -> int:
                     f"  DEPENDENCY {dependency.source_module} -> {dependency.target_module}"
                     f" [line {dependency.line}]{imported}{relation}"
                 )
+        if project_map.cross_file_calls:
+            lines.extend(["", "CROSS-FILE CALLS"])
+            for call in project_map.cross_file_calls:
+                resolution = f" ({call.resolution})" if call.resolution != "direct" else ""
+                lines.append(
+                    f"  CROSS-FILE {call.source_module}.{call.caller} -> "
+                    f"{call.target_module}.{call.target_symbol}"
+                    f" [line {call.line}]{resolution}"
+                )
         if project_map.warnings:
             lines.extend(["", "WARNINGS:"] + [f"  {warning}" for warning in project_map.warnings])
         report = "\n".join(lines) + "\n"
@@ -177,7 +186,8 @@ def _run_mission(args: argparse.Namespace) -> int:
                 "Project map: "
                 f"{mapped['modules']} modules, {mapped['classes']} classes, "
                 f"{mapped['functions']} functions, {mapped['calls']} call sites, "
-                f"{mapped['dependency_edges']} internal dependency edges"
+                f"{mapped['dependency_edges']} internal dependency edges, "
+                f"{mapped['cross_file_calls']} cross-file calls"
             )
         for step in result.steps:
             mutation = " [MUTATING]" if step.mutates else ""

@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     check = authority_actions.add_parser("check", help="Check one exact-scope capability (never runs the requested action)")
     check.add_argument("--policy", required=True, help="Version 1 JSON policy file")
     check.add_argument("--audit-log", required=True, help="Append-only JSONL decision log path")
-    check.add_argument("--subject", required=True, help="Authenticated caller identity")
+    check.add_argument("--subject", required=True, help="Caller identity asserted by the invoking host")
     check.add_argument("--capability", required=True, help="Named capability, e.g. project.inspect")
     check.add_argument("--resource", required=True, help="Exact resource identifier; no wildcard matching")
     check.add_argument("--format", choices=("text", "json"), default="text")

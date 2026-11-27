@@ -19,7 +19,7 @@ AegisForge v0.5.0 is a local-first static security workbench, Python source mapp
 
 ## Authority kernel
 
-The authority kernel is a decision layer, not an executor or a universal controller. A host supplies a fixed capability catalogue and a policy containing grants. Each grant matches exactly one subject, capability, and resource identifier, and must have a timezone-aware expiry. There are no wildcard grants or implicit inheritance. Unknown capabilities and unmatched or expired grants are denied.
+The authority kernel is a decision layer, not an executor or a universal controller. A trusted host supplies authenticated caller identity, a fixed capability catalogue, and a policy containing grants. The kernel itself does not authenticate callers or approvers, and policy-file integrity is the host's responsibility. Each grant matches exactly one subject, capability, and resource identifier, and must have a timezone-aware expiry. There are no wildcard grants or implicit inheritance. Unknown capabilities and unmatched or expired grants are denied.
 
 Capabilities marked mutating require a short-lived, exact-scope, single-use approval token in addition to an active grant. The token is held in process memory and is issued only after the host has authenticated the approver and received explicit consent. The `issue_approval` method is not an authentication mechanism and must never be exposed directly to an unauthenticated client. Authorization returns a decision; it does not invoke a tool, command, service, or device.
 

@@ -15,6 +15,7 @@ class ImportRecord:
     alias: str | None
     line: int
     relative_level: int = 0
+    scope: str | None = None
 
 @dataclass(frozen=True, slots=True)
 class SymbolRecord:
@@ -127,9 +128,27 @@ def _scope_bindings(node: ast.AST) -> set[str]:
     return collector.names
 
 
+class _ModuleRebindingCollector(_ScopeBindingCollector):
+    """Collect module-level rebinding without counting import declarations."""
+
+    def visit_Import(self, node: ast.Import) -> None:
+        return
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        return
+
+
+def _module_rebound_names(tree: ast.Module) -> set[str]:
+    collector = _ModuleRebindingCollector()
+    for statement in tree.body:
+        collector.visit(statement)
+    return collector.names
+
+
 class _ModuleVisitor(ast.NodeVisitor):
-    def __init__(self) -> None:
+    def __init__(self, module_rebound_names: set[str] | None = None) -> None:
         self.scope: list[str] = []
+        self.module_rebound_names = module_rebound_names or set()
         self.imports: list[ImportRecord] = []
         self.symbols: list[SymbolRecord] = []
         self.calls: list[CallRecord] = []
@@ -177,6 +196,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 imported_name=None,
                 alias=alias.asname,
                 line=node.lineno,
+                scope=".".join(self.scope) or None,
             ))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -188,6 +208,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 alias=alias.asname,
                 line=node.lineno,
                 relative_level=node.level,
+                scope=".".join(self.scope) or None,
             ))
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -220,7 +241,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 line=line,
                 column=column,
             ))
-            shadowed: set[str] = set()
+            shadowed: set[str] = set(self.module_rebound_names)
             for names in self.scope_bindings:
                 shadowed.update(names)
             self.call_shadowed_names[(line, column)] = frozenset(shadowed)
@@ -384,6 +405,8 @@ def _build_cross_file_calls(
         # Each binding maps a local expression prefix to an imported module or symbol.
         bindings: list[dict[str, str]] = []
         for item in source.imports:
+            if item.scope is not None:
+                continue
             base = _absolute_import_base(source, item)
             if base is None:
                 continue
@@ -502,7 +525,9 @@ def _build_cross_file_calls(
                 for item in candidates
             }
             if len(unique) == 1:
-                results.append(next(iter(unique.values())))
+                resolved = next(iter(unique.values()))
+                if resolved.target_module != source.module:
+                    results.append(resolved)
 
     return sorted(
         results,
@@ -542,7 +567,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
             location = f" at line {exc.lineno}" if exc.lineno else ""
             warnings.append(f"{relative}: Python syntax error{location}; structural index skipped: {exc.msg}")
             continue
-        visitor = _ModuleVisitor()
+        visitor = _ModuleVisitor(_module_rebound_names(tree))
         visitor.visit(tree)
         call_shadowed_names[relative] = visitor.call_shadowed_names
         modules.append(ModuleRecord(

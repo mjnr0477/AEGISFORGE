@@ -413,11 +413,13 @@ def _build_cross_file_calls(
             if item.imported_name is None:
                 if base not in known_modules:
                     continue
-                local_prefix = item.alias or item.module
-                if not local_prefix:
+                local_prefix = item.alias or item.module.split(".", 1)[0]
+                access_prefix = item.alias or item.module
+                if not local_prefix or not access_prefix:
                     continue
                 bindings.append({
                     "local_prefix": local_prefix,
+                    "access_prefix": access_prefix,
                     "target_module": base,
                     "target_symbol": "",
                     "kind": "module",
@@ -438,6 +440,7 @@ def _build_cross_file_calls(
             if has_symbol:
                 bindings.append({
                     "local_prefix": local_name,
+                    "access_prefix": local_name,
                     "target_module": base,
                     "target_symbol": item.imported_name,
                     "kind": "symbol",
@@ -446,11 +449,20 @@ def _build_cross_file_calls(
             elif has_submodule:
                 bindings.append({
                     "local_prefix": local_name,
+                    "access_prefix": local_name,
                     "target_module": submodule,
                     "target_symbol": "",
                     "kind": "module",
                     "resolution": "possible_submodule",
                 })
+
+        local_binding_counts: dict[str, int] = {}
+        for binding in bindings:
+            name = binding["local_prefix"]
+            local_binding_counts[name] = local_binding_counts.get(name, 0) + 1
+        ambiguous_local_bindings = {
+            name for name, count in local_binding_counts.items() if count > 1
+        }
 
         shadowed_calls = call_shadowed_names.get(source.path, {})
         for call in source.calls:
@@ -458,8 +470,9 @@ def _build_cross_file_calls(
             candidates: list[CrossFileCallRecord] = []
             for binding in bindings:
                 local_prefix = binding["local_prefix"]
-                if local_prefix in call_shadowed:
+                if local_prefix in call_shadowed or local_prefix in ambiguous_local_bindings:
                     continue
+                access_prefix = binding["access_prefix"]
 
                 target_module = binding["target_module"]
                 binding_kind = binding["kind"]
@@ -467,10 +480,10 @@ def _build_cross_file_calls(
                 target_symbol_prefix = binding["target_symbol"]
 
                 if binding_kind == "symbol":
-                    if call.callee == local_prefix:
+                    if call.callee == access_prefix:
                         symbol_names = [target_symbol_prefix]
-                    elif call.callee.startswith(local_prefix + "."):
-                        suffix = call.callee[len(local_prefix) + 1:]
+                    elif call.callee.startswith(access_prefix + "."):
+                        suffix = call.callee[len(access_prefix) + 1:]
                         symbol_names = [target_symbol_prefix + "." + suffix]
                     else:
                         continue
@@ -489,9 +502,9 @@ def _build_cross_file_calls(
                             ))
                     continue
 
-                if not call.callee.startswith(local_prefix + "."):
+                if not call.callee.startswith(access_prefix + "."):
                     continue
-                suffix = call.callee[len(local_prefix) + 1:].split(".")
+                suffix = call.callee[len(access_prefix) + 1:].split(".")
                 # Prefer the deepest uniquely indexed submodule whose remainder
                 # names exactly one symbol. Shorter matches are not inferred.
                 matches_for_binding: list[tuple[int, str, str]] = []

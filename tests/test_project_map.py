@@ -126,7 +126,7 @@ class ProjectMapTests(unittest.TestCase):
             root = Path(temp)
             (root / "tool").mkdir()
             (root / "main.py").write_text("import tool\n", encoding="utf-8")
-            (root / "tool.py").write_text("VALUE = 1\\n", encoding="utf-8")
+            (root / "tool.py").write_text("VALUE = 1\n", encoding="utf-8")
             (root / "tool" / "__init__.py").write_text("VALUE = 2\n", encoding="utf-8")
             result = build_project_map(root)
 

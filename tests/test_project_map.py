@@ -453,6 +453,67 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(len(result.cross_file_calls), 1)
         self.assertEqual(result.cross_file_calls[0].resolution, "ambiguous")
 
+    def test_detects_direct_circular_import_groups(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "alpha.py").write_text("import beta\n", encoding="utf-8")
+            (root / "beta.py").write_text("import alpha\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("alpha", "beta"))
+        self.assertEqual(cycle.resolution, "direct")
+        self.assertEqual(cycle.edge_count, 2)
+        self.assertEqual(cycle.possible_edges, 0)
+        self.assertEqual(result.summary["circular_dependency_groups"], 1)
+
+    def test_detects_a_direct_self_import_cycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "app.py").write_text("import app\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("app",))
+        self.assertEqual(cycle.resolution, "direct")
+        self.assertEqual(cycle.edge_count, 1)
+
+    def test_labels_cycles_requiring_possible_submodule_edges(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "service.py").write_text(
+                "from app import start\n"
+                "def run(): return 1\n",
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "from pkg import service\n"
+                "def start(): return service.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("app", "pkg.service"))
+        self.assertEqual(cycle.resolution, "possible")
+        self.assertEqual(cycle.edge_count, 2)
+        self.assertEqual(cycle.possible_edges, 1)
+
+    def test_does_not_report_acyclic_import_dependencies_as_cycles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "app.py").write_text("import service\n", encoding="utf-8")
+            (root / "service.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(result.circular_dependencies, [])
+
     def test_reports_syntax_failures_instead_of_silently_omitting_them(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

@@ -6,6 +6,7 @@ implicitly. Hosts must authenticate approvers before issuing one-time approvals.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -193,7 +194,7 @@ class _AuditTrail:
 
     def entries(self) -> list[dict[str, object]]:
         with self._lock:
-            return [dict(item) for item in self._entries]
+            return copy.deepcopy(self._entries)
 
 
 class AuthorityKernel:

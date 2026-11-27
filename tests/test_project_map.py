@@ -335,6 +335,26 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(result.cross_file_calls, [])
 
+    def test_does_not_guess_when_package_symbol_and_submodule_are_both_ambiguous(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text(
+                "def worker(): return 1\n"
+                "def worker(): return 2\n",
+                encoding="utf-8",
+            )
+            (package / "worker.py").write_text("def run(): return 3\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from pkg import worker\n"
+                "def start(): worker.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_labels_package_symbol_and_submodule_name_collisions_ambiguous(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

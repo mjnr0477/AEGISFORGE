@@ -351,7 +351,13 @@ class ProjectMap:
             "modules": [asdict(module) for module in self.modules],
             "dependencies": [asdict(item) for item in self.dependencies],
             "cross_file_calls": [asdict(item) for item in self.cross_file_calls],
-            "circular_dependencies": [asdict(item) for item in self.circular_dependencies],
+            "circular_dependencies": [
+                {
+                    **asdict(item),
+                    "modules": list(item.modules),
+                }
+                for item in self.circular_dependencies
+            ],
             "warnings": list(self.warnings),
         }
 

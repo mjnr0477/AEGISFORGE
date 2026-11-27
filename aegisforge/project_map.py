@@ -542,11 +542,16 @@ def _build_cross_file_calls(
         if has_star_import:
             continue
 
+        bindings_by_prefix: dict[str, list[dict[str, str]]] = {}
+        for binding in bindings:
+            bindings_by_prefix.setdefault(binding["local_prefix"], []).append(binding)
+
         shadowed_calls = call_shadowed_names.get(source.path, {})
         for call in source.calls:
             call_shadowed = shadowed_calls.get((call.line, call.column), frozenset())
             candidates: list[CrossFileCallRecord] = []
-            for binding in bindings:
+            local_root = call.callee.split(".", 1)[0]
+            for binding in bindings_by_prefix.get(local_root, ()):
                 local_prefix = binding["local_prefix"]
                 if local_prefix in call_shadowed or local_prefix in ambiguous_local_bindings:
                     continue

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,17 @@ class CallRecord:
     callee: str
     line: int
     column: int
+
+@dataclass(frozen=True, slots=True)
+class DependencyRecord:
+    source_module: str
+    target_module: str
+    line: int
+    import_kind: str
+    imported_name: str | None
+    alias: str | None
+    resolution: str
+
 
 @dataclass(frozen=True, slots=True)
 class ModuleRecord:
@@ -134,6 +145,7 @@ class ProjectMap:
     skipped_files: int
     modules: list[ModuleRecord]
     warnings: list[str]
+    dependencies: list[DependencyRecord] = field(default_factory=list)
 
     @property
     def summary(self) -> dict[str, int]:
@@ -143,6 +155,7 @@ class ProjectMap:
             "classes": sum(symbol.kind == "class" for module in self.modules for symbol in module.symbols),
             "functions": sum(symbol.kind in {"function", "async_function"} for module in self.modules for symbol in module.symbols),
             "calls": sum(len(module.calls) for module in self.modules),
+            "dependency_edges": len(self.dependencies),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -154,6 +167,7 @@ class ProjectMap:
             "skipped_files": self.skipped_files,
             "summary": self.summary,
             "modules": [asdict(module) for module in self.modules],
+            "dependencies": [asdict(item) for item in self.dependencies],
             "warnings": list(self.warnings),
         }
 
@@ -164,6 +178,86 @@ def _module_name(relative_path: str) -> str:
     if parts and parts[-1] == "__init__":
         parts.pop()
     return ".".join(parts) or "__init__"
+
+def _package_parts(module: ModuleRecord) -> list[str]:
+    """Return the import package containing this file, without importing it."""
+    parts = [part for part in module.module.split(".") if part]
+    if Path(module.path).name == "__init__.py":
+        return [] if parts == ["__init__"] else parts
+    return parts[:-1]
+
+
+def _absolute_import_base(importer: ModuleRecord, item: ImportRecord) -> str:
+    if item.relative_level <= 0:
+        return item.module
+
+    package = _package_parts(importer)
+    ascend = item.relative_level - 1
+    if ascend > len(package):
+        return ""
+    parts = package[:len(package) - ascend]
+    if item.module:
+        parts.extend(part for part in item.module.split(".") if part)
+    return ".".join(parts)
+
+
+def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
+    """Resolve import references only to Python modules in this scanned project.
+
+    A from-import can refer to a package attribute or a sibling submodule.
+    Keep the package edge direct and label a matching submodule as possible.
+    """
+    known_modules = {module.module for module in modules}
+    dependencies: list[DependencyRecord] = []
+
+    for importer in modules:
+        for item in importer.imports:
+            base = _absolute_import_base(importer, item)
+            if item.imported_name is None:
+                if base and base in known_modules:
+                    dependencies.append(DependencyRecord(
+                        source_module=importer.module,
+                        target_module=base,
+                        line=item.line,
+                        import_kind="import",
+                        imported_name=None,
+                        alias=item.alias,
+                        resolution="direct",
+                    ))
+                continue
+
+            if base and base in known_modules:
+                dependencies.append(DependencyRecord(
+                    source_module=importer.module,
+                    target_module=base,
+                    line=item.line,
+                    import_kind="from",
+                    imported_name=item.imported_name,
+                    alias=item.alias,
+                    resolution="direct",
+                ))
+
+            if item.imported_name != "*":
+                candidate = ".".join(part for part in (base, item.imported_name) if part)
+                if candidate and candidate != base and candidate in known_modules:
+                    dependencies.append(DependencyRecord(
+                        source_module=importer.module,
+                        target_module=candidate,
+                        line=item.line,
+                        import_kind="from",
+                        imported_name=item.imported_name,
+                        alias=item.alias,
+                        resolution="possible_submodule",
+                    ))
+
+    return sorted(
+        dependencies,
+        key=lambda item: (
+            item.source_module, item.line, item.target_module,
+            item.resolution, item.imported_name or "",
+        ),
+    )
+
 
 def build_project_map(target: str | Path) -> ProjectMap:
     """Build a bounded structural index of Python files without importing them."""
@@ -203,10 +297,12 @@ def build_project_map(target: str | Path) -> ProjectMap:
             calls=tuple(sorted(visitor.calls, key=lambda item: (item.line, item.column, item.callee))),
         ))
     modules.sort(key=lambda item: item.path)
+    dependencies = _build_dependencies(modules)
     return ProjectMap(
         project=root.name,
         scanned_files=scanned,
         skipped_files=skipped,
         modules=modules,
         warnings=warnings,
+        dependencies=dependencies,
     )

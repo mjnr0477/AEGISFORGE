@@ -46,6 +46,17 @@ class MissionCLITests(unittest.TestCase):
             self.assertEqual(source.read_text(encoding="utf-8"),"DEBUG=false\n")
             self.assertEqual(len(payload["applied_backups"]),1)
 
+    def test_mission_text_reports_circular_import_group_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            (root/"alpha.py").write_text("import beta\n",encoding="utf-8")
+            (root/"beta.py").write_text("import alpha\n",encoding="utf-8")
+            output=io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status=main(["mission","audit",str(root)])
+        self.assertEqual(status,0)
+        self.assertIn("1 circular import groups",output.getvalue())
+
     def test_mission_incomplete_scan_returns_operational_error(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

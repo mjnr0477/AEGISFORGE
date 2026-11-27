@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aegisforge.project_map import build_project_map
+from aegisforge.project_map import _cyclic_components, build_project_map
 
 class ProjectMapTests(unittest.TestCase):
     def test_indexes_modules_imports_classes_functions_and_calls(self):
@@ -452,6 +452,94 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(len(result.cross_file_calls), 1)
         self.assertEqual(result.cross_file_calls[0].resolution, "ambiguous")
+
+    def test_detects_direct_circular_import_groups(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "alpha.py").write_text("import beta\n", encoding="utf-8")
+            (root / "beta.py").write_text("import alpha\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("alpha", "beta"))
+        self.assertEqual(cycle.resolution, "direct")
+        self.assertEqual(cycle.edge_count, 2)
+        self.assertEqual(cycle.possible_edges, 0)
+        self.assertEqual(
+            [(edge.source_module, edge.target_module, edge.line, edge.resolution)
+             for edge in cycle.edges],
+            [("alpha", "beta", 1, "direct"), ("beta", "alpha", 1, "direct")],
+        )
+        self.assertEqual(result.summary["circular_dependency_groups"], 1)
+
+    def test_detects_a_direct_self_import_cycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "app.py").write_text("import app\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("app",))
+        self.assertEqual(cycle.resolution, "direct")
+        self.assertEqual(cycle.edge_count, 1)
+
+    def test_labels_cycles_requiring_possible_submodule_edges(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "service.py").write_text(
+                "from app import start\n"
+                "def run(): return 1\n",
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "from pkg import service\n"
+                "def start(): return service.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(len(result.circular_dependencies), 1)
+        cycle = result.circular_dependencies[0]
+        self.assertEqual(cycle.modules, ("app", "pkg.service"))
+        self.assertEqual(cycle.resolution, "possible")
+        self.assertEqual(cycle.edge_count, 2)
+        self.assertEqual(cycle.possible_edges, 1)
+        self.assertEqual(
+            [(edge.source_module, edge.target_module, edge.line, edge.resolution)
+             for edge in cycle.edges],
+            [("app", "pkg.service", 1, "possible_submodule"),
+             ("pkg.service", "app", 1, "direct")],
+        )
+
+    def test_cycle_detection_is_iterative_for_large_graphs(self):
+        count = 1500
+        nodes = {f"module_{index:04d}" for index in range(count)}
+        edges = [
+            (f"module_{index:04d}", f"module_{index + 1:04d}")
+            for index in range(count - 1)
+        ]
+        edges.append((f"module_{count - 1:04d}", "module_0000"))
+
+        components = _cyclic_components(nodes, edges)
+
+        self.assertEqual(len(components), 1)
+        self.assertEqual(len(components[0]), count)
+        self.assertEqual(components[0][0], "module_0000")
+        self.assertEqual(components[0][-1], f"module_{count - 1:04d}")
+
+    def test_does_not_report_acyclic_import_dependencies_as_cycles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "app.py").write_text("import service\n", encoding="utf-8")
+            (root / "service.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertEqual(result.circular_dependencies, [])
 
     def test_reports_syntax_failures_instead_of_silently_omitting_them(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -75,7 +75,7 @@ def create_local_registry() -> ToolRegistry:
     ))
     registry.register(ActionTool(
         "map_project",
-        "Build a read-only AST index of Python modules, internal imports, symbols, and conservative cross-file calls.",
+        "Build a read-only AST index of Python modules, internal imports, cross-file calls, and circular dependency groups.",
         build_project_map,
         mutates=False,
     ))
@@ -182,7 +182,8 @@ def run_audit_mission(
                 f"{result.project_map.summary['functions']} function(s), "
                 f"{result.project_map.summary['calls']} call site(s), and "
                 f"{result.project_map.summary['dependency_edges']} internal import edge(s), and "
-                f"{result.project_map.summary['cross_file_calls']} cross-file call(s)."
+                f"{result.project_map.summary['cross_file_calls']} cross-file call(s), and "
+                f"{result.project_map.summary['circular_dependency_groups']} circular import group(s)."
             ),
         )
     except (OSError, ValueError, RuntimeError) as exc:

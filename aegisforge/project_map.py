@@ -47,6 +47,16 @@ class DependencyRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ImportCycleEdgeRecord:
+    source_module: str
+    target_module: str
+    line: int
+    import_kind: str
+    imported_name: str | None
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
 class CrossFileCallRecord:
     source_module: str
     caller: str
@@ -56,6 +66,15 @@ class CrossFileCallRecord:
     line: int
     column: int
     resolution: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImportCycleRecord:
+    modules: tuple[str, ...]
+    resolution: str
+    edge_count: int
+    possible_edges: int
+    edges: tuple[ImportCycleEdgeRecord, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +336,7 @@ class ProjectMap:
     warnings: list[str]
     dependencies: list[DependencyRecord] = field(default_factory=list)
     cross_file_calls: list[CrossFileCallRecord] = field(default_factory=list)
+    circular_dependencies: list[ImportCycleRecord] = field(default_factory=list)
 
     @property
     def summary(self) -> dict[str, int]:
@@ -328,6 +348,7 @@ class ProjectMap:
             "calls": sum(len(module.calls) for module in self.modules),
             "dependency_edges": len(self.dependencies),
             "cross_file_calls": len(self.cross_file_calls),
+            "circular_dependency_groups": len(self.circular_dependencies),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -341,6 +362,14 @@ class ProjectMap:
             "modules": [asdict(module) for module in self.modules],
             "dependencies": [asdict(item) for item in self.dependencies],
             "cross_file_calls": [asdict(item) for item in self.cross_file_calls],
+            "circular_dependencies": [
+                {
+                    **asdict(item),
+                    "modules": list(item.modules),
+                    "edges": [asdict(edge) for edge in item.edges],
+                }
+                for item in self.circular_dependencies
+            ],
             "warnings": list(self.warnings),
         }
 
@@ -442,6 +471,154 @@ def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
             item.source_module, item.line, item.target_module,
             item.resolution, item.imported_name or "",
         ),
+    )
+
+
+def _strongly_connected_components(
+    nodes: set[str],
+    edges: list[tuple[str, str]],
+) -> list[tuple[str, ...]]:
+    """Find strongly connected components iteratively to avoid recursion limits."""
+    adjacency = {node: set() for node in nodes}
+    reverse = {node: set() for node in nodes}
+    for source, target in edges:
+        if source in nodes and target in nodes:
+            adjacency[source].add(target)
+            reverse[target].add(source)
+
+    visited: set[str] = set()
+    finish_order: list[str] = []
+    for start in sorted(nodes):
+        if start in visited:
+            continue
+        visited.add(start)
+        stack: list[tuple[str, Any]] = [(start, iter(sorted(adjacency[start])))]
+        while stack:
+            node, neighbors = stack[-1]
+            try:
+                neighbor = next(neighbors)
+            except StopIteration:
+                finish_order.append(node)
+                stack.pop()
+                continue
+            if neighbor not in visited:
+                visited.add(neighbor)
+                stack.append((neighbor, iter(sorted(adjacency[neighbor]))))
+
+    visited.clear()
+    components: list[tuple[str, ...]] = []
+    for start in reversed(finish_order):
+        if start in visited:
+            continue
+        component: list[str] = []
+        stack_nodes = [start]
+        visited.add(start)
+        while stack_nodes:
+            node = stack_nodes.pop()
+            component.append(node)
+            for neighbor in sorted(reverse[node], reverse=True):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack_nodes.append(neighbor)
+        components.append(tuple(sorted(component)))
+    return sorted(components)
+
+
+def _cyclic_components(
+    nodes: set[str],
+    edges: list[tuple[str, str]],
+) -> list[tuple[str, ...]]:
+    cyclic: list[tuple[str, ...]] = []
+    self_loops = {source for source, target in edges if source == target}
+    for component in _strongly_connected_components(nodes, edges):
+        if len(component) > 1 or (component and component[0] in self_loops):
+            cyclic.append(component)
+    return cyclic
+
+
+def _build_circular_dependencies(
+    modules: list[ModuleRecord],
+    dependencies: list[DependencyRecord],
+) -> list[ImportCycleRecord]:
+    """Report definite import cycles and larger cycles requiring possible edges."""
+    module_counts: dict[str, int] = {}
+    for module in modules:
+        module_counts[module.module] = module_counts.get(module.module, 0) + 1
+    known_modules = {name for name, count in module_counts.items() if count == 1}
+
+    direct_edges = [
+        (item.source_module, item.target_module)
+        for item in dependencies
+        if item.resolution == "direct"
+    ]
+    all_edges = [
+        (item.source_module, item.target_module)
+        for item in dependencies
+    ]
+    direct_components = _cyclic_components(known_modules, direct_edges)
+    all_components = _cyclic_components(known_modules, all_edges)
+    direct_sets = {frozenset(component) for component in direct_components}
+
+    records: list[ImportCycleRecord] = []
+    for component in direct_components:
+        members = set(component)
+        internal_edges = [
+            item for item in dependencies
+            if item.resolution == "direct"
+            and item.source_module in members
+            and item.target_module in members
+        ]
+        cycle_edges = tuple(
+            ImportCycleEdgeRecord(
+                source_module=item.source_module,
+                target_module=item.target_module,
+                line=item.line,
+                import_kind=item.import_kind,
+                imported_name=item.imported_name,
+                resolution=item.resolution,
+            )
+            for item in internal_edges
+        )
+        records.append(ImportCycleRecord(
+            modules=component,
+            resolution="direct",
+            edge_count=len(cycle_edges),
+            possible_edges=0,
+            edges=cycle_edges,
+        ))
+
+    for component in all_components:
+        if frozenset(component) in direct_sets:
+            continue
+        members = set(component)
+        internal_edges = [
+            item for item in dependencies
+            if item.source_module in members and item.target_module in members
+        ]
+        possible_count = sum(item.resolution != "direct" for item in internal_edges)
+        if possible_count:
+            cycle_edges = tuple(
+                ImportCycleEdgeRecord(
+                    source_module=item.source_module,
+                    target_module=item.target_module,
+                    line=item.line,
+                    import_kind=item.import_kind,
+                    imported_name=item.imported_name,
+                    resolution=item.resolution,
+                )
+                for item in internal_edges
+            )
+            records.append(ImportCycleRecord(
+                modules=component,
+                resolution="possible",
+                edge_count=len(cycle_edges),
+                possible_edges=possible_count,
+                edges=cycle_edges,
+            ))
+
+    return sorted(
+        records,
+        key=lambda item: (item.resolution != "direct", item.modules),
     )
 
 
@@ -693,6 +870,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
     modules.sort(key=lambda item: item.path)
     dependencies = _build_dependencies(modules)
     cross_file_calls = _build_cross_file_calls(modules, call_shadowed_names)
+    circular_dependencies = _build_circular_dependencies(modules, dependencies)
     return ProjectMap(
         project=root.name,
         scanned_files=scanned,
@@ -701,4 +879,5 @@ def build_project_map(target: str | Path) -> ProjectMap:
         warnings=warnings,
         dependencies=dependencies,
         cross_file_calls=cross_file_calls,
+        circular_dependencies=circular_dependencies,
     )

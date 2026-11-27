@@ -140,18 +140,18 @@ class ProjectMapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "service.py").write_text(
-                "def execute(): return 1\\n"
-                "class Runner:\\n"
-                "    def run(self): return execute()\\n",
+                "def execute(): return 1\n"
+                "class Runner:\n"
+                "    def run(self): return execute()\n",
                 encoding="utf-8",
             )
             (root / "app.py").write_text(
-                "from service import execute as invoke\\n"
-                "import service as svc\\n"
-                "def start():\\n"
-                "    invoke()\\n"
-                "    svc.execute()\\n"
-                "    svc.Runner.run()\\n",
+                "from service import execute as invoke\n"
+                "import service as svc\n"
+                "def start():\n"
+                "    invoke()\n"
+                "    svc.execute()\n"
+                "    svc.Runner.run()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -169,10 +169,10 @@ class ProjectMapTests(unittest.TestCase):
             package = root / "pkg"
             package.mkdir()
             (package / "__init__.py").write_text("", encoding="utf-8")
-            (package / "worker.py").write_text("def run(): return 1\\n", encoding="utf-8")
+            (package / "worker.py").write_text("def run(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "from pkg import worker as imported_worker\\n"
-                "def start(): imported_worker.run()\\n",
+                "from pkg import worker as imported_worker\n"
+                "def start(): imported_worker.run()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -187,13 +187,13 @@ class ProjectMapTests(unittest.TestCase):
     def test_does_not_resolve_import_aliases_shadowed_in_function_scopes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "service.py").write_text("def execute(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "from service import execute as invoke\\n"
-                "def parameter_shadow(invoke): invoke()\\n"
-                "def assignment_shadow():\\n"
-                "    invoke = safe_callable\\n"
-                "    invoke()\\n",
+                "from service import execute as invoke\n"
+                "def parameter_shadow(invoke): invoke()\n"
+                "def assignment_shadow():\n"
+                "    invoke = safe_callable\n"
+                "    invoke()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -203,11 +203,11 @@ class ProjectMapTests(unittest.TestCase):
     def test_does_not_resolve_function_local_import_as_module_import(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "service.py").write_text("def execute(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "def start():\\n"
-                "    import service as svc\\n"
-                "    svc.execute()\\n",
+                "def start():\n"
+                "    import service as svc\n"
+                "    svc.execute()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -218,11 +218,11 @@ class ProjectMapTests(unittest.TestCase):
     def test_does_not_resolve_module_alias_after_module_level_rebinding(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "service.py").write_text("def execute(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "import service as svc\\n"
-                "svc = replacement\\n"
-                "def start(): svc.execute()\\n",
+                "import service as svc\n"
+                "svc = replacement\n"
+                "def start(): svc.execute()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -234,11 +234,11 @@ class ProjectMapTests(unittest.TestCase):
             root = Path(temp)
             package = root / "pkg"
             package.mkdir()
-            (package / "__init__.py").write_text("def worker(): return 1\\n", encoding="utf-8")
-            (package / "worker.py").write_text("def run(): return 2\\n", encoding="utf-8")
+            (package / "__init__.py").write_text("def worker(): return 1\n", encoding="utf-8")
+            (package / "worker.py").write_text("def run(): return 2\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "from pkg import worker\\n"
-                "def start(): worker()\\n",
+                "from pkg import worker\n"
+                "def start(): worker()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)

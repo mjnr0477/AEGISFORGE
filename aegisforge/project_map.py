@@ -365,7 +365,12 @@ def _absolute_import_base(importer: ModuleRecord, item: ImportRecord) -> str | N
         return item.module
 
     package = _package_parts(importer)
-    if item.relative_level > len(package):
+    is_root_package_init = (
+        importer.module == "__init__"
+        and Path(importer.path).as_posix() == "__init__.py"
+    )
+    maximum_level = 1 if is_root_package_init else len(package)
+    if item.relative_level > maximum_level:
         return None
     ascend = item.relative_level - 1
     parts = package[:len(package) - ascend]

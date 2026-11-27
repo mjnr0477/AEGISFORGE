@@ -108,10 +108,10 @@ class ProjectMapTests(unittest.TestCase):
             root = Path(temp)
             package = root / "pkg" / "sub"
             package.mkdir(parents=True)
-            (root / "common.py").write_text("VALUE = 1\\n", encoding="utf-8")
+            (root / "common.py").write_text("VALUE = 1\n", encoding="utf-8")
             (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
             (root / "pkg" / "sub" / "worker.py").write_text(
-                "from ... import common\\n",
+                "from ... import common\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -125,9 +125,9 @@ class ProjectMapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "tool").mkdir()
-            (root / "main.py").write_text("import tool\\n", encoding="utf-8")
+            (root / "main.py").write_text("import tool\n", encoding="utf-8")
             (root / "tool.py").write_text("VALUE = 1\\n", encoding="utf-8")
-            (root / "tool" / "__init__.py").write_text("VALUE = 2\\n", encoding="utf-8")
+            (root / "tool" / "__init__.py").write_text("VALUE = 2\n", encoding="utf-8")
             result = build_project_map(root)
 
         self.assertFalse(any(

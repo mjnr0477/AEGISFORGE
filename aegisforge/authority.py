@@ -241,6 +241,7 @@ class AuthorityKernel:
         audit_path: str | Path | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> "AuthorityKernel":
+        capability_specs = tuple(capabilities)
         path = Path(policy_path).expanduser()
         if path.is_symlink():
             raise AuthorityError("policy file must not be a symbolic link")
@@ -252,7 +253,7 @@ class AuthorityKernel:
             raise AuthorityError("policy must contain only version=1 and grants")
         if not isinstance(payload["grants"], list):
             raise AuthorityError("policy grants must be a list")
-        capability_names = {spec.name for spec in capabilities}
+        capability_names = {spec.name for spec in capability_specs}
         grants: list[Grant] = []
         for index, item in enumerate(payload["grants"]):
             if not isinstance(item, dict) or set(item) != {
@@ -272,7 +273,7 @@ class AuthorityKernel:
                 grants.append(grant)
             except (TypeError, ValueError) as exc:
                 raise AuthorityError(f"policy grant {index} is invalid: {exc}") from exc
-        return cls(capabilities, grants, audit_path=audit_path, clock=clock)
+        return cls(capability_specs, grants, audit_path=audit_path, clock=clock)
 
     def _now(self) -> datetime:
         value = self._clock()

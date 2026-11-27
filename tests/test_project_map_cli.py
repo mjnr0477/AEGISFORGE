@@ -28,6 +28,8 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertEqual(payload["summary"]["circular_dependency_groups"],1)
         self.assertEqual(payload["circular_dependencies"][0]["modules"],["app", "util"])
         self.assertEqual(payload["circular_dependencies"][0]["resolution"],"direct")
+        self.assertEqual(len(payload["circular_dependencies"][0]["edges"]),2)
+        self.assertEqual(payload["circular_dependencies"][0]["edges"][0]["line"],1)
         self.assertEqual(payload["cross_file_calls"][0]["source_module"],"app")
         self.assertEqual(payload["cross_file_calls"][0]["target_symbol"],"work")
         self.assertEqual(payload["dependencies"][0]["source_module"],"app")
@@ -61,6 +63,8 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn("CIRCULAR IMPORT GROUPS", output.getvalue())
         self.assertIn("CYCLE [direct] alpha, beta [edges=2]", output.getvalue())
+        self.assertIn("alpha -> beta [line 1, import, direct]", output.getvalue())
+        self.assertIn("beta -> alpha [line 1, import, direct]", output.getvalue())
 
     def test_map_command_reports_partial_analysis_with_exit_two(self):
         with tempfile.TemporaryDirectory() as temp:

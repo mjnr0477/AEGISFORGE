@@ -1,7 +1,9 @@
-"""Conservative, intra-scope source-to-sink analysis for Python ASTs.
+"""Conservative source-to-sink analysis for Python ASTs.
 
-This intentionally supports only simple local assignment propagation. It is a
+The analyzer tracks local assignments, common import aliases, and bounded
+summaries for unambiguous synchronous module-level helper functions. It is a
 candidate-finding engine, not a complete taint analysis or proof of exploitability.
+It does not execute or import scanned project code.
 """
 from __future__ import annotations
 
@@ -358,7 +360,7 @@ def _module_import_aliases(tree: ast.Module) -> dict[str, str]:
 
 
 def _summarize_function(
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    function: ast.FunctionDef,
     source: str,
     relative_path: str,
     module_aliases: dict[str, str],

@@ -336,6 +336,30 @@ def endpoint(cursor):
         findings=analyze_python_flows(source,"app.py")
         self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
 
+    def test_does_not_guess_parameter_binding_after_starred_positional_argument(self):
+        source = '''
+def execute(first, command):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(*values, command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_preserves_known_binding_before_starred_positional_argument(self):
+        source = '''
+def execute(command, extra):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(command, *values)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
     def test_does_not_treat_unawaited_async_helper_as_executed(self):
         source = '''
 async def execute(command):

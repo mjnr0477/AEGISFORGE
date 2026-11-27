@@ -512,13 +512,13 @@ class ProjectMapTests(unittest.TestCase):
             (f"module_{index:04d}", f"module_{index + 1:04d}")
             for index in range(count - 1)
         ]
-        edges.append((f"module_{count - 1:04d}", "module_0"))
+        edges.append((f"module_{count - 1:04d}", "module_0000"))
 
         components = _cyclic_components(nodes, edges)
 
         self.assertEqual(len(components), 1)
         self.assertEqual(len(components[0]), count)
-        self.assertEqual(components[0][0], "module_0")
+        self.assertEqual(components[0][0], "module_0000")
         self.assertEqual(components[0][-1], f"module_{count - 1:04d}")
 
     def test_does_not_report_acyclic_import_dependencies_as_cycles(self):

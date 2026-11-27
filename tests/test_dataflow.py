@@ -157,5 +157,62 @@ def endpoint():
         with self.assertRaises(SyntaxError):
             analyze_python_flows("def broken(:\n","broken.py")
 
+    def test_tracks_subprocess_module_alias_into_shell_sink(self):
+        source = '''
+import subprocess as sp
+def endpoint():
+    command = request.args.get("command")
+    sp.run(command, shell=True)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_imported_os_system_alias(self):
+        source = '''
+from os import system as launch
+def endpoint():
+    command = request.args.get("command")
+    launch(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_flask_module_alias_and_os_module_alias(self):
+        source = '''
+import flask as f
+import os as operating_system
+def endpoint():
+    command = f.request.args.get("command")
+    operating_system.system(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_imported_subprocess_function_alias(self):
+        source = '''
+from subprocess import run as launch_process
+def endpoint():
+    command = request.args.get("command")
+    launch_process(command, shell=True)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_function_local_import_alias_does_not_leak_to_sibling_scope(self):
+        source = '''
+def run(command):
+    return command
+
+def first():
+    from os import system as run
+    run("constant")
+
+def second():
+    command = request.args.get("command")
+    run(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
 if __name__ == "__main__":
     unittest.main()

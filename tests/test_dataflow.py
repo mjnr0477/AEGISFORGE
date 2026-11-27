@@ -157,5 +157,245 @@ def endpoint():
         with self.assertRaises(SyntaxError):
             analyze_python_flows("def broken(:\n","broken.py")
 
+    def test_tracks_subprocess_module_alias_into_shell_sink(self):
+        source = '''
+import subprocess as sp
+def endpoint():
+    command = request.args.get("command")
+    sp.run(command, shell=True)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_imported_os_system_alias(self):
+        source = '''
+from os import system as launch
+def endpoint():
+    command = request.args.get("command")
+    launch(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_flask_module_alias_and_os_module_alias(self):
+        source = '''
+import flask as f
+import os as operating_system
+def endpoint():
+    command = f.request.args.get("command")
+    operating_system.system(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_tracks_imported_subprocess_function_alias(self):
+        source = '''
+from subprocess import run as launch_process
+def endpoint():
+    command = request.args.get("command")
+    launch_process(command, shell=True)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_function_local_import_alias_does_not_leak_to_sibling_scope(self):
+        source = '''
+def run(command):
+    return command
+
+def first():
+    from os import system as run
+    run("constant")
+
+def second():
+    command = request.args.get("command")
+    run(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_traces_untrusted_argument_into_helper_function_sink(self):
+        source = '''
+def execute_command(command):
+    subprocess.run(command, shell=True)
+
+def endpoint():
+    command = request.args.get("command")
+    execute_command(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-002")
+        self.assertEqual(finding.line,3)
+        self.assertIn("source line 6",finding.message)
+
+    def test_traces_through_multiple_local_helper_functions(self):
+        source = '''
+def final_step(value):
+    os.system(value)
+
+def middle_step(value):
+    final_step(value)
+
+def endpoint():
+    command = request.args.get("command")
+    middle_step(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-002")
+        self.assertIn("source line 9",finding.message)
+
+    def test_traces_tainted_return_value_from_helper(self):
+        source = '''
+def get_user_code():
+    return request.args.get("code")
+
+def endpoint():
+    eval(get_user_code())
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-001")
+        self.assertIn("source line 3",finding.message)
+
+    def test_maps_keyword_arguments_to_helper_parameters(self):
+        source = '''
+def execute(value):
+    os.system(value)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(value=command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_flag_constant_passed_to_tainted_sink_helper(self):
+        source = '''
+def execute(value):
+    os.system(value)
+
+def endpoint():
+    execute("fixed-command")
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_ambiguous_duplicate_helper_names_are_not_summarized(self):
+        source = '''
+def execute(value):
+    os.system(value)
+
+def execute(value):
+    return value
+
+def endpoint():
+    command = request.args.get("command")
+    execute(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_traces_parameter_through_helper_return_into_eval(self):
+        source = '''
+def identity(value):
+    return value
+
+def endpoint():
+    command = request.args.get("code")
+    eval(identity(command))
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-001",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-001")
+        self.assertIn("source line 6",finding.message)
+
+    def test_traces_helper_argument_into_sql_query_text(self):
+        source = '''
+def run_query(cursor, query):
+    cursor.execute(query)
+
+def endpoint(cursor):
+    name = request.args.get("name")
+    query = "SELECT * FROM users WHERE name='" + name + "'"
+    run_query(cursor, query)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-003",{item.rule_id for item in findings})
+        finding=next(item for item in findings if item.rule_id=="AF-FLOW-003")
+        self.assertIn("source line 6",finding.message)
+
+    def test_does_not_bind_positional_argument_to_keyword_only_parameter(self):
+        source = '''\ndef execute(*, value):\n    os.system(value)\n\ndef endpoint():\n    command = request.args.get("command")\n    execute(command)\n'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_bind_keyword_to_positional_only_parameter(self):
+        source = '''\ndef execute(value, /):\n    os.system(value)\n\ndef endpoint():\n    command = request.args.get("command")\n    execute(value=command)\n'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_resolve_helper_shadowed_by_function_parameter(self):
+        source = '''
+def execute_command(value):
+    os.system(value)
+
+def endpoint(execute_command):
+    command = request.args.get("command")
+    execute_command(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_resolve_helper_shadowed_by_local_assignment(self):
+        source = '''
+def execute_command(value):
+    os.system(value)
+
+def endpoint():
+    command = request.args.get("command")
+    execute_command = safe_callable
+    execute_command(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_guess_parameter_binding_after_starred_positional_argument(self):
+        source = '''
+def execute(first, command):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(*values, command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_preserves_known_binding_before_starred_positional_argument(self):
+        source = '''
+def execute(command, extra):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(command, *values)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_treat_unawaited_async_helper_as_executed(self):
+        source = '''
+async def execute(command):
+    os.system(command)
+
+def endpoint():
+    command = request.args.get("command")
+    execute(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
 if __name__ == "__main__":
     unittest.main()

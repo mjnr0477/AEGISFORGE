@@ -263,6 +263,35 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(result.cross_file_calls, [])
 
+    def test_does_not_resolve_imported_module_after_local_attribute_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import service as svc\n"
+                "def start():\n"
+                "    svc.run = replacement\n"
+                "    svc.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
+    def test_does_not_resolve_imported_module_after_module_attribute_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import service as svc\n"
+                "svc.run = replacement\n"
+                "def start(): svc.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_does_not_resolve_duplicate_module_level_import_aliases(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -21,7 +21,7 @@ class ProjectMapCLITests(unittest.TestCase):
             payload=json.loads(output.getvalue())
         self.assertEqual(status,0)
         self.assertEqual(payload["operation"],"project_map")
-        self.assertEqual(payload["summary"]["functions"],1)
+        self.assertEqual(payload["summary"]["functions"],2)
         self.assertEqual(payload["summary"]["calls"],1)
         self.assertEqual(payload["summary"]["dependency_edges"],1)
         self.assertEqual(payload["dependencies"][0]["source_module"],"app")

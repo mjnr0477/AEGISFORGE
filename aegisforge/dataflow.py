@@ -148,8 +148,10 @@ class _FlowVisitor(ast.NodeVisitor):
         """Replace parameter markers using Python's basic argument binding rules."""
         arguments: dict[str, ast.AST] = {}
         for name, value in zip(parameters[:positional_count], call.args):
-            if not isinstance(value, ast.Starred):
-                arguments[name] = value
+            if isinstance(value, ast.Starred):
+                # Positional values after *args have ambiguous parameter indexes.
+                break
+            arguments[name] = value
         keyword_bindable = parameters[positional_only_count:]
         for keyword in call.keywords:
             if keyword.arg in keyword_bindable and keyword.arg not in arguments:

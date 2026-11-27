@@ -126,12 +126,13 @@ class ProjectMapTests(unittest.TestCase):
             root = Path(temp)
             (root / "tool").mkdir()
             (root / "main.py").write_text("import tool\n", encoding="utf-8")
-            (root / "tool.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tool" / "__init__.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (root / "helper.py").write_text("VALUE = 0\n", encoding="utf-8")
+            (root / "tool.py").write_text("import helper\nVALUE = 1\n", encoding="utf-8")
+            (root / "tool" / "__init__.py").write_text("import helper\nVALUE = 2\n", encoding="utf-8")
             result = build_project_map(root)
 
         self.assertFalse(any(
-            item.source_module == "main" and item.target_module == "tool"
+            item.target_module == "tool" or item.source_module == "tool"
             for item in result.dependencies
         ))
 

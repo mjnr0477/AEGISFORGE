@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .authority import CAPABILITY_RE, AuthorityKernel
 from .models import Finding, ScanResult
 from .project_map import ProjectMap, build_project_map
 from .repairs import RepairProposal, apply_repairs, propose_repairs
@@ -26,6 +27,7 @@ class ActionTool:
     description: str
     handler: Callable[..., Any]
     mutates: bool = False
+    capability: str | None = None
 
 class ToolRegistry:
     """Small explicit registry; it never imports or discovers tools dynamically."""
@@ -42,6 +44,12 @@ class ToolRegistry:
             raise ValueError("tool description must not be empty")
         if not callable(tool.handler):
             raise ValueError("tool handler must be callable")
+        if not isinstance(tool.mutates, bool):
+            raise ValueError("tool mutates flag must be boolean")
+        if tool.capability is not None and (
+            not isinstance(tool.capability, str) or not CAPABILITY_RE.fullmatch(tool.capability)
+        ):
+            raise ValueError("tool capability must be a dotted lowercase identifier")
         if tool.name in self._tools:
             raise ValueError(f"tool is already registered: {tool.name}")
         self._tools[tool.name] = tool
@@ -54,6 +62,44 @@ class ToolRegistry:
         if tool.mutates and not approve_mutation:
             raise ToolPermissionError(
                 f"tool '{name}' changes local project data; explicit approval is required"
+            )
+        return tool.handler(*args, **kwargs)
+
+    def call_authorized(
+        self,
+        name: str,
+        *args: Any,
+        authority: AuthorityKernel,
+        subject: str,
+        resource: str,
+        approval_token: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Authorize immediately before invoking a registered tool handler.
+
+        Tools used through this path must declare a capability whose mutating
+        classification matches the tool's own mutates flag.
+        """
+        try:
+            tool = self._tools[name]
+        except KeyError as exc:
+            raise KeyError(f"unknown local tool: {name}") from exc
+        if tool.capability is None:
+            raise ToolPermissionError(f"tool '{name}' has no authority capability mapping")
+        expected_mutation = authority.capability_is_mutating(tool.capability)
+        if expected_mutation is None or expected_mutation != tool.mutates:
+            raise ToolPermissionError(
+                f"tool '{name}' mutation classification does not match capability '{tool.capability}'"
+            )
+        decision = authority.authorize(
+            subject=subject,
+            capability=tool.capability,
+            resource=resource,
+            approval_token=approval_token,
+        )
+        if not decision.allowed:
+            raise ToolPermissionError(
+                f"authority denied tool '{name}': {decision.reason}"
             )
         return tool.handler(*args, **kwargs)
 
@@ -72,24 +118,28 @@ def create_local_registry() -> ToolRegistry:
         "Read and statically analyze supported source and configuration files in a local directory.",
         scan_directory,
         mutates=False,
+        capability="project.inspect",
     ))
     registry.register(ActionTool(
         "map_project",
         "Build a read-only AST index of Python modules, imports, classes, functions, and call sites.",
         build_project_map,
         mutates=False,
+        capability="project.inspect",
     ))
     registry.register(ActionTool(
         "propose_repairs",
         "Generate supported deterministic repair previews without changing files.",
         propose_repairs,
         mutates=False,
+        capability="project.inspect",
     ))
     registry.register(ActionTool(
         "apply_supported_repairs",
         "Apply only built-in deterministic repairs, create backups, rescan, and roll back failures.",
         apply_repairs,
         mutates=True,
+        capability="project.repair",
     ))
     return registry
 

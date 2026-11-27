@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .authority import AuthorityKernel, DEFAULT_CAPABILITIES
 from .autonomy import create_local_registry, run_audit_mission
 from .baselines import compare_with_baseline, create_baseline, load_baseline
 from .models import SEVERITY_ORDER
@@ -52,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--apply-supported-repairs", action="store_true", help="Explicitly approve built-in local file changes")
     audit.add_argument("--backup-dir", help="Optional directory for repair backups")
     audit.add_argument("--format", choices=("text", "json"), default="text")
+
+    authority = commands.add_parser("authority", help="Evaluate a scoped capability policy and record the decision")
+    authority_actions = authority.add_subparsers(dest="authority_action", required=True)
+    check = authority_actions.add_parser("check", help="Check one exact-scope capability (never runs the requested action)")
+    check.add_argument("--policy", required=True, help="Version 1 JSON policy file")
+    check.add_argument("--audit-log", required=True, help="Append-only JSONL decision log path")
+    check.add_argument("--subject", required=True, help="Authenticated caller identity")
+    check.add_argument("--capability", required=True, help="Named capability, e.g. project.inspect")
+    check.add_argument("--resource", required=True, help="Exact resource identifier; no wildcard matching")
+    check.add_argument("--format", choices=("text", "json"), default="text")
 
     baseline = commands.add_parser("baseline", help="Create or compare a local finding baseline")
     actions = baseline.add_subparsers(dest="baseline_action", required=True)
@@ -194,6 +205,31 @@ def _run_mission(args: argparse.Namespace) -> int:
             print("\nNo files were changed. Review proposals, then rerun with --apply-supported-repairs to authorize them.")
     return 2 if result.status in {"failed", "incomplete"} else 0
 
+def _run_authority_check(args: argparse.Namespace) -> int:
+    kernel = AuthorityKernel.from_policy_file(
+        DEFAULT_CAPABILITIES,
+        args.policy,
+        audit_path=args.audit_log,
+    )
+    decision = kernel.authorize(
+        subject=args.subject,
+        capability=args.capability,
+        resource=args.resource,
+    )
+    if args.format == "json":
+        sys.stdout.write(json.dumps(decision.to_dict(), indent=2, ensure_ascii=False) + "\\n")
+    else:
+        status = "ALLOW" if decision.allowed else "DENY"
+        print(f"Authority decision: {status}")
+        print(f"Subject: {decision.subject}")
+        print(f"Capability: {decision.capability}")
+        print(f"Exact resource: {decision.resource}")
+        print(f"Reason: {decision.reason}")
+        print(f"Audit sequence: {decision.audit_sequence}")
+        print("No operation was executed by this check.")
+    return 0 if decision.allowed else 1
+
+
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     destination = args.output or str(Path(result.root) / ".aegisforge" / "baseline.json")
@@ -238,6 +274,8 @@ def main(argv=None) -> int:
             return _run_tools(args)
         if args.command == "mission" and args.mission_action == "audit":
             return _run_mission(args)
+        if args.command == "authority" and args.authority_action == "check":
+            return _run_authority_check(args)
         if args.command == "scan":
             return _run_scan(args)
         if args.command == "map":

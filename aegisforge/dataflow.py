@@ -6,6 +6,7 @@ candidate-finding engine, not a complete taint analysis or proof of exploitabili
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 from pathlib import Path
 
 from .analyzers import sanitize_evidence
@@ -43,10 +44,33 @@ SUBPROCESS_SINKS = {
 }
 SHELL_COMMAND_SINKS = {"os.system", "os.popen"}
 
+@dataclass(frozen=True, slots=True)
+class _SinkFlow:
+    rule_id: str
+    node: ast.Call
+    sink_name: str
+    origins: frozenset[int]
+
+
+@dataclass(frozen=True, slots=True)
+class _FunctionSummary:
+    parameters: tuple[str, ...]
+    return_origins: frozenset[int]
+    sink_flows: tuple[_SinkFlow, ...]
+
+
 class _FlowVisitor(ast.NodeVisitor):
-    def __init__(self, source: str, path: str) -> None:
+    def __init__(
+        self,
+        source: str,
+        path: str,
+        function_summaries: dict[str, _FunctionSummary] | None = None,
+    ) -> None:
         self.path = path
         self.lines = source.splitlines()
+        self.function_summaries = function_summaries or {}
+        self.sink_flows: list[_SinkFlow] = []
+        self.return_origins: set[int] = set()
         self.tainted_names: set[str] = set()
         self.taint_sources: dict[str, set[int]] = {}
         self.aliases: dict[str, str] = {}
@@ -95,6 +119,9 @@ class _FlowVisitor(ast.NodeVisitor):
             function = self._canonical_name(node.func)
             if function in SOURCE_CALLS or self._is_source_name(function):
                 return {max(1, getattr(node, "lineno", 1))}
+            summary = self.function_summaries.get(function) if "." not in function else None
+            if summary is not None:
+                return self._substitute_origins(summary.return_origins, node, summary.parameters)
         origins: set[int] = set()
         for child in ast.iter_child_nodes(node):
             origins.update(self._taint_origins(child))
@@ -102,6 +129,32 @@ class _FlowVisitor(ast.NodeVisitor):
 
     def _is_tainted(self, node: ast.AST | None) -> bool:
         return bool(self._taint_origins(node))
+
+    def _substitute_origins(
+        self,
+        origins: frozenset[int] | set[int],
+        call: ast.Call,
+        parameters: tuple[str, ...],
+    ) -> set[int]:
+        """Replace negative parameter markers with taint from call-site arguments."""
+        arguments: dict[str, ast.AST] = {}
+        for name, value in zip(parameters, call.args):
+            if not isinstance(value, ast.Starred):
+                arguments[name] = value
+        for keyword in call.keywords:
+            if keyword.arg in parameters:
+                arguments[keyword.arg] = keyword.value
+        resolved: set[int] = set()
+        for origin in origins:
+            if origin > 0:
+                resolved.add(origin)
+            elif origin < 0:
+                index = -origin - 1
+                if index < len(parameters):
+                    argument = arguments.get(parameters[index])
+                    if argument is not None:
+                        resolved.update(self._taint_origins(argument))
+        return resolved
 
     def _assign_target(self, target: ast.AST, origins: set[int]) -> None:
         if isinstance(target, ast.Name):
@@ -130,6 +183,12 @@ class _FlowVisitor(ast.NodeVisitor):
         caller = ".".join(self.scope) or "module scope"
         source_refs = ", ".join(str(item) for item in sorted(source_lines))
         message = f"Potential flow from input source line {source_refs} to {sink_name} in {caller}."
+        self.sink_flows.append(_SinkFlow(
+            rule_id=rule_id,
+            node=node if isinstance(node, ast.Call) else ast.Call(func=ast.Name(id=sink_name), args=[], keywords=[]),
+            sink_name=sink_name,
+            origins=frozenset(source_lines),
+        ))
         self.findings.append(Finding(
             rule_id=rule.rule_id,
             severity=rule.severity,
@@ -170,8 +229,12 @@ class _FlowVisitor(ast.NodeVisitor):
         previous_taint = self.tainted_names
         previous_sources = self.taint_sources
         previous_aliases = self.aliases.copy()
+        previous_returns = self.return_origins
+        previous_flows = self.sink_flows
         self.tainted_names = set()
         self.taint_sources = {}
+        self.return_origins = set()
+        self.sink_flows = []
         self.scope.append(label)
         try:
             self.generic_visit(node)
@@ -180,6 +243,8 @@ class _FlowVisitor(ast.NodeVisitor):
             self.tainted_names = previous_taint
             self.taint_sources = previous_sources
             self.aliases = previous_aliases
+            self.return_origins = previous_returns
+            self.sink_flows = previous_flows
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._visit_nested_scope(node, node.name)
@@ -192,6 +257,10 @@ class _FlowVisitor(ast.NodeVisitor):
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         self._visit_nested_scope(node, "<lambda>")
+
+    def visit_Return(self, node: ast.Return) -> None:
+        self.return_origins.update(self._taint_origins(node.value))
+        self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         origins = self._taint_origins(node.value)
@@ -250,11 +319,122 @@ class _FlowVisitor(ast.NodeVisitor):
             if origins:
                 self._add("AF-FLOW-003", node, f"{function}() query text", origins)
 
+        summary = self.function_summaries.get(function) if "." not in function else None
+        if summary is not None:
+            for flow in summary.sink_flows:
+                origins = self._substitute_origins(flow.origins, node, summary.parameters)
+                if origins:
+                    self._add(flow.rule_id, flow.node, flow.sink_name, origins)
+
         self.generic_visit(node)
 
+
+def _function_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]:
+    args = node.args
+    return tuple(
+        item.arg for item in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+    )
+
+
+def _module_import_aliases(tree: ast.Module) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                if item.asname:
+                    aliases[item.asname] = item.name
+                else:
+                    bound = item.name.split(".", 1)[0]
+                    aliases[bound] = bound
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for item in node.names:
+                local = item.asname or item.name
+                if module == "flask" and item.name == "request":
+                    aliases[local] = "request"
+                else:
+                    aliases[local] = f"{module}.{item.name}" if module else item.name
+    return aliases
+
+
+def _summarize_function(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    source: str,
+    relative_path: str,
+    module_aliases: dict[str, str],
+    summaries: dict[str, _FunctionSummary],
+) -> _FunctionSummary:
+    visitor = _FlowVisitor(source, relative_path, summaries)
+    visitor.aliases.update(module_aliases)
+    parameters = _function_parameters(function)
+    visitor.tainted_names.update(parameters)
+    visitor.taint_sources.update({
+        name: {-(index + 1)} for index, name in enumerate(parameters)
+    })
+    visitor.scope.append(function.name)
+    for statement in function.body:
+        visitor.visit(statement)
+
+    unique_flows: dict[tuple[str, int, str, frozenset[int]], _SinkFlow] = {}
+    for flow in visitor.sink_flows:
+        key = (
+            flow.rule_id,
+            max(1, getattr(flow.node, "lineno", 1)),
+            flow.sink_name,
+            flow.origins,
+        )
+        unique_flows[key] = flow
+    return _FunctionSummary(
+        parameters=parameters,
+        return_origins=frozenset(visitor.return_origins),
+        sink_flows=tuple(unique_flows.values()),
+    )
+
+
+def _local_function_summaries(
+    tree: ast.Module,
+    source: str,
+    relative_path: str,
+) -> dict[str, _FunctionSummary]:
+    # Only unambiguous module-level functions are summarized. Methods, nested
+    # functions, dynamic dispatch, and star-argument binding remain out of scope.
+    candidates = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    counts: dict[str, int] = {}
+    for function in candidates:
+        counts[function.name] = counts.get(function.name, 0) + 1
+    functions = {node.name: node for node in candidates if counts[node.name] == 1}
+    if not functions:
+        return {}
+
+    aliases = _module_import_aliases(tree)
+    summaries: dict[str, _FunctionSummary] = {}
+    # A bounded fixed-point pass propagates summaries through short local helper
+    # chains without recursively executing or importing any scanned code.
+    max_rounds = min(len(functions) + 1, 12)
+    for _ in range(max_rounds):
+        changed = False
+        for name, function in functions.items():
+            current = _summarize_function(function, source, relative_path, aliases, summaries)
+            if summaries.get(name) != current:
+                summaries[name] = current
+                changed = True
+        if not changed:
+            break
+    return summaries
+
+
 def analyze_python_flows(source: str, relative_path: str) -> list[Finding]:
-    """Return candidate data-flow findings; SyntaxError is intentionally raised."""
+    """Return conservative intra- and bounded interprocedural flow findings."""
     tree = ast.parse(source, filename=relative_path)
-    visitor = _FlowVisitor(source, relative_path)
+    summaries = _local_function_summaries(tree, source, relative_path)
+    visitor = _FlowVisitor(source, relative_path, summaries)
     visitor.visit(tree)
-    return visitor.findings
+
+    unique: dict[tuple[str, str, int, str], Finding] = {}
+    for finding in visitor.findings:
+        key = (finding.rule_id, finding.path, finding.line, finding.message)
+        unique[key] = finding
+    return list(unique.values())

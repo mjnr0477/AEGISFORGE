@@ -64,7 +64,7 @@ class ArchiveScanTests(unittest.TestCase):
         result=scan_archive_bytes(archive)
         cycles=result["project_map"]["circular_dependencies"]
         self.assertEqual(len(cycles),1)
-        self.assertEqual(cycles[0]["modules"],["project.a","project.b"])
+        self.assertEqual(cycles[0]["modules"],["project.a", "project.b"])
         self.assertEqual(cycles[0]["resolution"],"direct")
 
     def test_rejects_parent_traversal_paths(self):

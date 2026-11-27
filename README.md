@@ -2,9 +2,9 @@
 
 **Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, builds a structural index of Python projects, checks selected local source-to-sink flows, tracks baselines, prepares repairs, and sequences approved tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.4.2
+## Current repository build: 0.5.0
 
-The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
+The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, a deterministic mission runner, and a default-deny authority kernel.
 
 ### Included checks
 
@@ -62,6 +62,11 @@ aegisforge repair ./my-project --apply
 aegisforge tools --format json
 aegisforge mission audit ./my-project --format json
 aegisforge mission audit ./my-project --apply-supported-repairs
+
+aegisforge authority check --policy ./authority-policy.json \
+  --audit-log ./.aegisforge/authority.jsonl \
+  --subject operator --capability project.inspect \
+  --resource project:/absolute/path/to/my-project
 ~~~
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
@@ -69,6 +74,33 @@ Baseline comparison reports new, known, and resolved findings. Repair mode previ
 The mission runner is a deterministic local workflow engine, not a general AI model. It maps the Python structure, scans the project, prepares supported repair proposals, and pauses for approval before any file changes. Its report separates built-in repair proposals from findings that still need manual security review. If a mission fails or becomes incomplete, it returns all remaining findings to the manual-review list. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
 
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission runs return 2 when the workflow fails or cannot complete its scan.
+
+### Scoped authority checks
+
+The authority kernel evaluates a policy; it does not execute the requested operation. Policies use exact subject, capability, and resource matches, with an expiry on every grant. Unknown capabilities, missing grants, and expired grants are denied. Wildcards and implicit inheritance are not supported.
+
+Example policy file:
+
+~~~json
+{
+  "version": 1,
+  "grants": [
+    {
+      "subject": "operator",
+      "capability": "project.inspect",
+      "resource": "project:/absolute/path/to/my-project",
+      "expires_at": "2030-01-01T00:00:00Z"
+    }
+  ]
+}
+~~~
+
+The initial vocabulary is `project.inspect`, `project.repair`, `service.inspect`, `service.restart`, `device.inspect`, and `device.control`. These are permission labels only: this release does not ship service connectors, device adapters, or arbitrary command execution.
+
+Capabilities marked as mutating need an active grant plus a short-lived, exact-scope, single-use approval token. A host application must authenticate the approver and obtain explicit human consent before calling the Python API's `issue_approval` method; that method is not an authentication system and must never be exposed directly to unauthenticated clients. The CLI check intentionally cannot manufacture or pass mutation approvals, so it denies mutating checks with `approval_required`.
+
+Each check appends a decision to a local JSONL hash chain. Detected edits, reordering, truncation after the process has loaded the log, or write failures block authorization. The hash chain is tamper-evident, not tamper-proof against a privileged attacker who can rewrite the entire log. Use one process per audit log. The CLI returns exit code 0 for allow, 1 for deny, and 2 for an operational or policy error.
+
 
 ## Safety model
 
@@ -78,6 +110,7 @@ A scan returns exit code 1 when a finding meets the selected --fail-on threshold
 - Symlinks are rejected; individual-file, aggregate-byte, file-count, directory-count and entry-count limits bound scanning.
 - Browser uploads are accepted only by the loopback server and are never forwarded to another service.
 - The local tool registry exposes only explicit built-in tools; mutating calls require explicit approval.
+- The authority kernel defaults to deny, matches exact resource scopes, requires expiring grants, and requires a one-time human approval token for mutating capability decisions.
 - Evidence is redacted before it enters reports.
 - A clean report is not a security certification. Validate findings in context.
 
@@ -95,7 +128,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13; it also
 
 ## Roadmap
 
-Next: extend data-flow analysis across more language constructs and frameworks, then strengthen isolated engineering missions. AegisForge is not a general autonomous intelligence or a universal system controller.
+Next: connect the authority kernel to authenticated, narrowly scoped local adapters, then expand analysis and isolated engineering missions. AegisForge is not a general autonomous intelligence or a universal system controller.
 
 ## License
 

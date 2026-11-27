@@ -215,6 +215,63 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(result.cross_file_calls, [])
         self.assertEqual(result.modules[0].imports[0].scope, "start")
 
+    def test_does_not_resolve_conditional_module_imports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from typing import TYPE_CHECKING\\n"
+                "if TYPE_CHECKING:\\n"
+                "    import service as svc\\n"
+                "def start(): svc.execute()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+        conditional_import = next(item for item in result.modules[0].imports if item.alias == "svc")
+        self.assertTrue(conditional_import.conditional)
+
+    def test_does_not_resolve_optional_import_from_module_try_block(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "try:\\n"
+                "    import service as svc\\n"
+                "except ImportError:\\n"
+                "    svc = fallback\\n"
+                "def start(): svc.execute()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
+    def test_does_not_treat_package_data_attribute_as_submodule_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg"
+            package.mkdir()
+            (package / "__init__.py").write_text(
+                "worker = create_worker()\\n",
+                encoding="utf-8",
+            )
+            (package / "worker.py").write_text(
+                "def run(): return 1\\n",
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "from pkg import worker\\n"
+                "def start(): worker.run()\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        package_record = next(module for module in result.modules if module.module == "pkg")
+        self.assertIn("worker", package_record.module_bindings)
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_does_not_resolve_module_alias_after_module_level_rebinding(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

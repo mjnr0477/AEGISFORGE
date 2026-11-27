@@ -1,7 +1,7 @@
 ## Unreleased
 
-- Add bounded interprocedural Python flow summaries for unambiguous module-level helper functions, including positional/keyword argument and returned-value propagation.
-- Preserve conservative limits: at most 12 summary rounds; no method, nested-function, dynamic-dispatch, star-argument, or cross-file call resolution.
+- Add bounded interprocedural Python flow summaries for unambiguous synchronous module-level helper functions, including positional/keyword argument and returned-value propagation.
+- Preserve conservative limits: at most 12 summary rounds; no async-helper, method, nested-function, dynamic-dispatch, star-argument, or cross-file call resolution.
 - Add regression tests for helper sinks, multi-helper chains, tainted returns, keyword arguments, constants, and ambiguous duplicate function names.
 
 ## Unreleased

@@ -23,7 +23,7 @@ class ProjectMapCLITests(unittest.TestCase):
         self.assertEqual(payload["operation"],"project_map")
         self.assertEqual(payload["summary"]["functions"],2)
         self.assertEqual(payload["summary"]["calls"],1)
-        self.assertEqual(payload["summary"]["dependency_edges"],1)
+        self.assertEqual(payload["summary"]["dependency_edges"],2)
         self.assertEqual(payload["summary"]["cross_file_calls"],1)
         self.assertEqual(payload["summary"]["circular_dependency_groups"],1)
         self.assertEqual(payload["circular_dependencies"][0]["modules"],["app", "util"])

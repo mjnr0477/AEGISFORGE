@@ -402,6 +402,27 @@ def _build_cross_file_calls(
         if source.module not in known_modules:
             continue
 
+        # Count every module-scope import binding, including external imports.
+        # An unresolved import can still overwrite a name used by a local import.
+        local_binding_counts: dict[str, int] = {}
+        has_star_import = False
+        for item in source.imports:
+            if item.scope is not None:
+                continue
+            if item.imported_name == "*":
+                has_star_import = True
+                continue
+            local_name = (
+                item.alias or item.module.split(".", 1)[0]
+                if item.imported_name is None
+                else item.alias or item.imported_name
+            )
+            if local_name:
+                local_binding_counts[local_name] = local_binding_counts.get(local_name, 0) + 1
+        ambiguous_local_bindings = {
+            name for name, count in local_binding_counts.items() if count > 1
+        }
+
         # Each binding maps a local expression prefix to an imported module or symbol.
         bindings: list[dict[str, str]] = []
         for item in source.imports:
@@ -456,13 +477,8 @@ def _build_cross_file_calls(
                     "resolution": "possible_submodule",
                 })
 
-        local_binding_counts: dict[str, int] = {}
-        for binding in bindings:
-            name = binding["local_prefix"]
-            local_binding_counts[name] = local_binding_counts.get(name, 0) + 1
-        ambiguous_local_bindings = {
-            name for name, count in local_binding_counts.items() if count > 1
-        }
+        if has_star_import:
+            continue
 
         shadowed_calls = call_shadowed_names.get(source.path, {})
         for call in source.calls:

@@ -16,6 +16,7 @@ class ImportRecord:
     line: int
     relative_level: int = 0
     scope: str | None = None
+    conditional: bool = False
 
 @dataclass(frozen=True, slots=True)
 class SymbolRecord:
@@ -64,6 +65,8 @@ class ModuleRecord:
     imports: tuple[ImportRecord, ...]
     symbols: tuple[SymbolRecord, ...]
     calls: tuple[CallRecord, ...]
+    module_bindings: tuple[str, ...] = ()
+
 
 class _ScopeBindingCollector(ast.NodeVisitor):
     """Collect names bound in one scope while leaving nested scopes opaque."""
@@ -97,6 +100,41 @@ class _ScopeBindingCollector(ast.NodeVisitor):
 
     def visit_arg(self, node: ast.arg) -> None:
         self.names.add(node.arg)
+
+    def _visit_conditional(self, node: ast.AST) -> None:
+        self.conditional_depth += 1
+        try:
+            self.generic_visit(node)
+        finally:
+            self.conditional_depth -= 1
+
+    def visit_If(self, node: ast.If) -> None:
+        self._visit_conditional(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_conditional(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self._visit_conditional(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_conditional(node)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_conditional(node)
+
+    if hasattr(ast, "TryStar"):
+        def visit_TryStar(self, node: ast.AST) -> None:
+            self._visit_conditional(node)
+
+    def visit_Match(self, node: ast.AST) -> None:
+        self._visit_conditional(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         for item in node.names:
@@ -174,6 +212,7 @@ class _ModuleVisitor(ast.NodeVisitor):
         self.calls: list[CallRecord] = []
         self.scope_bindings: list[set[str]] = []
         self.call_shadowed_names: dict[tuple[int, int], frozenset[str]] = {}
+        self.conditional_depth = 0
 
     @staticmethod
     def dotted_name(node: ast.AST) -> str:
@@ -217,6 +256,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 alias=alias.asname,
                 line=node.lineno,
                 scope=".".join(self.scope) or None,
+                conditional=self.conditional_depth > 0,
             ))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -229,6 +269,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 line=node.lineno,
                 relative_level=node.level,
                 scope=".".join(self.scope) or None,
+                conditional=self.conditional_depth > 0,
             ))
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -409,6 +450,7 @@ def _build_cross_file_calls(
         module_counts[module.module] = module_counts.get(module.module, 0) + 1
     known_modules = {name for name, count in module_counts.items() if count == 1}
     symbols_by_module: dict[str, dict[str, list[SymbolRecord]]] = {}
+    modules_by_name = {module.module: module for module in modules if module.module in known_modules}
     for module in modules:
         if module.module not in known_modules:
             continue
@@ -446,7 +488,7 @@ def _build_cross_file_calls(
         # Each binding maps a local expression prefix to an imported module or symbol.
         bindings: list[dict[str, str]] = []
         for item in source.imports:
-            if item.scope is not None:
+            if item.scope is not None or item.conditional:
                 continue
             base = _absolute_import_base(source, item)
             if base is None:
@@ -472,11 +514,11 @@ def _build_cross_file_calls(
                 continue
             local_name = item.alias or item.imported_name
             submodule = ".".join(part for part in (base, item.imported_name) if part)
-            has_package = base in known_modules
-            has_symbol = (
-                has_package
-                and bool(symbols_by_module.get(base, {}).get(item.imported_name, []))
-            )
+            package_module = modules_by_name.get(base)
+            package_names = set(package_module.module_bindings) if package_module else set()
+            package_symbols = symbols_by_module.get(base, {}).get(item.imported_name, [])
+            has_package_attribute = item.imported_name in package_names
+            has_symbol = bool(package_symbols)
             has_submodule = submodule in known_modules and submodule != base
             if has_symbol:
                 bindings.append({
@@ -487,7 +529,7 @@ def _build_cross_file_calls(
                     "kind": "symbol",
                     "resolution": "ambiguous" if has_submodule else "direct",
                 })
-            elif has_submodule:
+            elif has_submodule and not has_package_attribute:
                 bindings.append({
                     "local_prefix": local_name,
                     "access_prefix": local_name,
@@ -619,12 +661,24 @@ def build_project_map(target: str | Path) -> ProjectMap:
         visitor = _ModuleVisitor(_module_rebound_names(tree))
         visitor.visit(tree)
         call_shadowed_names[relative] = visitor.call_shadowed_names
+        module_bindings = set(visitor.module_rebound_names)
+        for imported in visitor.imports:
+            if imported.scope is not None or imported.imported_name == "*":
+                continue
+            bound_name = (
+                imported.alias or imported.module.split(".", 1)[0]
+                if imported.imported_name is None
+                else imported.alias or imported.imported_name
+            )
+            if bound_name:
+                module_bindings.add(bound_name)
         modules.append(ModuleRecord(
             module=_module_name(relative),
             path=relative,
             imports=tuple(sorted(visitor.imports, key=lambda item: (item.line, item.module, item.imported_name or ""))),
             symbols=tuple(sorted(visitor.symbols, key=lambda item: (item.line, item.qualified_name))),
             calls=tuple(sorted(visitor.calls, key=lambda item: (item.line, item.column, item.callee))),
+            module_bindings=tuple(sorted(module_bindings)),
         ))
     modules.sort(key=lambda item: item.path)
     dependencies = _build_dependencies(modules)

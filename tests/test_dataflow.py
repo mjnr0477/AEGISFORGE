@@ -336,6 +336,31 @@ def endpoint(cursor):
         findings=analyze_python_flows(source,"app.py")
         self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
 
+    def test_does_not_resolve_helper_shadowed_by_function_parameter(self):
+        source = '''
+def execute_command(value):
+    os.system(value)
+
+def endpoint(execute_command):
+    command = request.args.get("command")
+    execute_command(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
+    def test_does_not_resolve_helper_shadowed_by_local_assignment(self):
+        source = '''
+def execute_command(value):
+    os.system(value)
+
+def endpoint():
+    command = request.args.get("command")
+    execute_command = safe_callable
+    execute_command(command)
+'''
+        findings=analyze_python_flows(source,"app.py")
+        self.assertNotIn("AF-FLOW-002",{item.rule_id for item in findings})
+
     def test_does_not_guess_parameter_binding_after_starred_positional_argument(self):
         source = '''
 def execute(first, command):

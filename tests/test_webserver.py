@@ -39,6 +39,23 @@ class ArchiveScanTests(unittest.TestCase):
         self.assertEqual(project_map["modules"][0]["path"],"project/main.py")
         self.assertNotIn("aegisforge-upload-",str(project_map))
 
+    def test_scan_includes_cross_file_calls_in_python_project_map(self):
+        archive=make_zip([
+            ("project/app.py",
+             "from service import execute as invoke\\n"
+             "def start(): return invoke()\\n"),
+            ("project/service.py","def execute(): return 1\\n"),
+        ])
+        result=scan_archive_bytes(archive)
+        project_map=result["project_map"]
+        self.assertEqual(project_map["summary"]["cross_file_calls"],1)
+        self.assertEqual(len(project_map["cross_file_calls"]),1)
+        call=project_map["cross_file_calls"][0]
+        self.assertEqual(call["source_module"],"project.app")
+        self.assertEqual(call["target_module"],"project.service")
+        self.assertEqual(call["target_symbol"],"execute")
+        self.assertNotIn("aegisforge-upload-",str(project_map))
+
     def test_rejects_parent_traversal_paths(self):
         archive=make_zip([("../outside.py","eval(x)\n")])
         with self.assertRaisesRegex(ValueError,"unsafe archive path"):

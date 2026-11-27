@@ -75,6 +75,26 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         if isinstance(node.ctx, (ast.Store, ast.Del)):
             self.names.add(node.id)
 
+    @staticmethod
+    def _root_name(node: ast.AST) -> str | None:
+        while isinstance(node, (ast.Attribute, ast.Subscript)):
+            node = node.value
+        return node.id if isinstance(node, ast.Name) else None
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            root = self._root_name(node)
+            if root:
+                self.names.add(root)
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            root = self._root_name(node)
+            if root:
+                self.names.add(root)
+        self.generic_visit(node)
+
     def visit_arg(self, node: ast.arg) -> None:
         self.names.add(node.arg)
 

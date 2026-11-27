@@ -100,7 +100,8 @@ function renderProjectMap(projectMap) {
     ["Call sites", "calls"],
     ["Imports", "imports"],
     ["Internal links", "dependency_edges"],
-    ["Cross-file calls", "cross_file_calls"]
+    ["Cross-file calls", "cross_file_calls"],
+    ["Cycle groups", "circular_dependency_groups"]
   ]) {
     const tile = element("div", "project-map-stat");
     tile.append(element("span", "project-map-count", summary[key] || 0));
@@ -170,6 +171,26 @@ function renderProjectMap(projectMap) {
     if (crossCalls.length > 24) {
       modules.append(element("div", "project-map-more",
         "And " + (crossCalls.length - 24) + " more cross-file call(s). Export JSON for the full graph."));
+    }
+  }
+
+  const cycles = projectMap.circular_dependencies || [];
+  modules.append(element("div", "project-map-list-heading", "CIRCULAR IMPORT GROUPS"));
+  if (!cycles.length) {
+    modules.append(element("div", "empty-state", "No circular import groups were found."));
+  } else {
+    for (const cycle of cycles.slice(0, 16)) {
+      const row = element("div", "project-dependency");
+      row.append(element("strong", "project-dependency-path", cycle.modules.join(" ↔ ")));
+      const details = cycle.resolution === "direct" ? "definite cycle" : "possible cycle";
+      row.append(element("span", "project-dependency-meta",
+        details + " · " + cycle.edge_count + " edge(s)" +
+        (cycle.possible_edges ? " · " + cycle.possible_edges + " uncertain" : "")));
+      modules.append(row);
+    }
+    if (cycles.length > 16) {
+      modules.append(element("div", "project-map-more",
+        "And " + (cycles.length - 16) + " more circular group(s). Export JSON for the full index."));
     }
   }
 

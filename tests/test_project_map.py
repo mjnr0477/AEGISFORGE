@@ -87,6 +87,30 @@ class ProjectMapTests(unittest.TestCase):
         self.assertFalse(any(item.target_module == "os" for item in result.dependencies))
         self.assertEqual(result.summary["dependency_edges"], len(result.dependencies))
 
+    def test_resolves_relative_imports_from_a_scanned_package_root_init(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "__init__.py").write_text(
+                "from . import service\\n"
+                "from .service import execute\\n"
+                "def start():\\n"
+                "    service.run()\\n"
+                "    execute()\\n",
+                encoding="utf-8",
+            )
+            (root / "service.py").write_text(
+                "def run(): return 1\\n"
+                "def execute(): return 2\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        dependencies = {(item.source_module, item.target_module) for item in result.dependencies}
+        self.assertIn(("__init__", "service"), dependencies)
+        calls = {(item.source_module, item.target_module, item.target_symbol) for item in result.cross_file_calls}
+        self.assertIn(("__init__", "service", "run"), calls)
+        self.assertIn(("__init__", "service", "execute"), calls)
+
     def test_resolves_internal_imports_from_namespace_packages(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -278,6 +278,34 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(result.cross_file_calls, [])
 
+    def test_does_not_resolve_alias_overwritten_by_unresolved_external_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "import service as svc\n"
+                "import external_package as svc\n"
+                "def start(): svc.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
+    def test_does_not_resolve_calls_in_modules_with_star_imports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "service.py").write_text("def run(): return 1\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from external_package import *\n"
+                "import service as svc\n"
+                "def start(): svc.run()\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertEqual(result.cross_file_calls, [])
+
     def test_labels_package_symbol_and_submodule_name_collisions_ambiguous(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

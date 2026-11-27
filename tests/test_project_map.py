@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aegisforge.project_map import build_project_map
+from aegisforge.project_map import _cyclic_components, build_project_map
 
 class ProjectMapTests(unittest.TestCase):
     def test_indexes_modules_imports_classes_functions_and_calls(self):
@@ -504,6 +504,22 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(cycle.resolution, "possible")
         self.assertEqual(cycle.edge_count, 2)
         self.assertEqual(cycle.possible_edges, 1)
+
+    def test_cycle_detection_is_iterative_for_large_graphs(self):
+        count = 1500
+        nodes = {f"module_{index}" for index in range(count)}
+        edges = [
+            (f"module_{index}", f"module_{index + 1}")
+            for index in range(count - 1)
+        ]
+        edges.append((f"module_{count - 1}", "module_0"))
+
+        components = _cyclic_components(nodes, edges)
+
+        self.assertEqual(len(components), 1)
+        self.assertEqual(len(components[0]), count)
+        self.assertEqual(components[0][0], "module_0")
+        self.assertEqual(components[0][-1], f"module_{count - 1}")
 
     def test_does_not_report_acyclic_import_dependencies_as_cycles(self):
         with tempfile.TemporaryDirectory() as temp:

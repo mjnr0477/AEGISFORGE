@@ -42,7 +42,7 @@ class ArchiveScanTests(unittest.TestCase):
     def test_scan_includes_cross_file_calls_in_python_project_map(self):
         archive=make_zip([
             ("project/app.py",
-             "from service import execute as invoke\n"
+             "from project.service import execute as invoke\n"
              "def start(): return invoke()\n"),
             ("project/service.py","def execute(): return 1\n"),
         ])

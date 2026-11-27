@@ -103,6 +103,38 @@ class ProjectMapTests(unittest.TestCase):
         self.assertIn(("app", "namespace.service", "possible_submodule"), edges)
         self.assertIn(("namespace.sub.worker", "namespace.service", "possible_submodule"), edges)
 
+    def test_ignores_relative_imports_that_escape_the_package_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "pkg" / "sub"
+            package.mkdir(parents=True)
+            (root / "common.py").write_text("VALUE = 1\\n", encoding="utf-8")
+            (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "pkg" / "sub" / "worker.py").write_text(
+                "from ... import common\\n",
+                encoding="utf-8",
+            )
+            result = build_project_map(root)
+
+        self.assertFalse(any(
+            item.source_module == "pkg.sub.worker" and item.target_module == "common"
+            for item in result.dependencies
+        ))
+
+    def test_does_not_resolve_duplicate_module_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "tool").mkdir()
+            (root / "main.py").write_text("import tool\\n", encoding="utf-8")
+            (root / "tool.py").write_text("VALUE = 1\\n", encoding="utf-8")
+            (root / "tool" / "__init__.py").write_text("VALUE = 2\\n", encoding="utf-8")
+            result = build_project_map(root)
+
+        self.assertFalse(any(
+            item.source_module == "main" and item.target_module == "tool"
+            for item in result.dependencies
+        ))
+
     def test_reports_syntax_failures_instead_of_silently_omitting_them(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

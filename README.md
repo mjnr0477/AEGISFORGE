@@ -99,7 +99,7 @@ The initial vocabulary is `project.inspect`, `project.repair`, `service.inspect`
 
 Capabilities marked as mutating need an active grant plus a short-lived, exact-scope, single-use approval token. A host application must authenticate the approver and obtain explicit human consent before calling the Python API's `issue_approval` method; that method is not an authentication system and must never be exposed directly to unauthenticated clients. The CLI check intentionally cannot manufacture or pass mutation approvals, so it denies mutating checks with `approval_required`.
 
-Each check appends a decision to a local JSONL hash chain. Detected edits, reordering, truncation after the process has loaded the log, or write failures block authorization. The hash chain is tamper-evident, not tamper-proof against a privileged attacker who can rewrite the entire log. Use one process per audit log. The CLI returns exit code 0 for allow, 1 for deny, and 2 for an operational or policy error.
+When an audit path is configured (and always for the CLI), each check appends a decision to a local JSONL hash chain. Python callers that omit an audit path retain decisions only in process memory; production hosts should configure a persistent path. Detected edits, reordering, truncation after the process has loaded the log, or write failures block authorization. The hash chain is tamper-evident, not tamper-proof against a privileged attacker who can rewrite the entire log. Use one process per audit log. The CLI returns exit code 0 for allow, 1 for deny, and 2 for an operational or policy error.
 
 
 ## Safety model

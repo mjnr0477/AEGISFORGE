@@ -217,7 +217,7 @@ def _run_authority_check(args: argparse.Namespace) -> int:
         resource=args.resource,
     )
     if args.format == "json":
-        sys.stdout.write(json.dumps(decision.to_dict(), indent=2, ensure_ascii=False) + "\\n")
+        sys.stdout.write(json.dumps(decision.to_dict(), indent=2, ensure_ascii=False) + "\n")
     else:
         status = "ALLOW" if decision.allowed else "DENY"
         print(f"Authority decision: {status}")

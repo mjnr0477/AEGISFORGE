@@ -15,6 +15,24 @@ class AnalyzerTests(unittest.TestCase):
         findings = analyze_python("subprocess.run(command, shell=True)\n", "app.py")
         self.assertIn("AF-PY-002", {item.rule_id for item in findings})
 
+    def test_detects_module_alias_for_shell_true(self):
+        findings = analyze_python(
+            "import subprocess as sp\nsp.run(command, shell=True)\n", "app.py"
+        )
+        self.assertIn("AF-PY-002", {item.rule_id for item in findings})
+
+    def test_detects_imported_alias_for_dynamic_eval(self):
+        findings = analyze_python(
+            "from builtins import eval as run_code\nrun_code(user_input)\n", "app.py"
+        )
+        self.assertIn("AF-PY-001", {item.rule_id for item in findings})
+
+    def test_detects_imported_alias_for_tls_verification(self):
+        findings = analyze_python(
+            "from requests import get as fetch\nfetch(url, verify=False)\n", "app.py"
+        )
+        self.assertIn("AF-PY-003", {item.rule_id for item in findings})
+
     def test_does_not_execute_scanned_source(self):
         with tempfile.TemporaryDirectory() as folder:
             marker = Path(folder) / "executed.txt"

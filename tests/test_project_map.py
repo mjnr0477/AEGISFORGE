@@ -218,12 +218,12 @@ class ProjectMapTests(unittest.TestCase):
     def test_does_not_resolve_conditional_module_imports(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "service.py").write_text("def execute(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "from typing import TYPE_CHECKING\\n"
-                "if TYPE_CHECKING:\\n"
-                "    import service as svc\\n"
-                "def start(): svc.execute()\\n",
+                "from typing import TYPE_CHECKING\n"
+                "if TYPE_CHECKING:\n"
+                "    import service as svc\n"
+                "def start(): svc.execute()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -235,13 +235,13 @@ class ProjectMapTests(unittest.TestCase):
     def test_does_not_resolve_optional_import_from_module_try_block(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "service.py").write_text("def execute(): return 1\\n", encoding="utf-8")
+            (root / "service.py").write_text("def execute(): return 1\n", encoding="utf-8")
             (root / "app.py").write_text(
-                "try:\\n"
-                "    import service as svc\\n"
-                "except ImportError:\\n"
-                "    svc = fallback\\n"
-                "def start(): svc.execute()\\n",
+                "try:\n"
+                "    import service as svc\n"
+                "except ImportError:\n"
+                "    svc = fallback\n"
+                "def start(): svc.execute()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)
@@ -254,16 +254,16 @@ class ProjectMapTests(unittest.TestCase):
             package = root / "pkg"
             package.mkdir()
             (package / "__init__.py").write_text(
-                "worker = create_worker()\\n",
+                "worker = create_worker()\n",
                 encoding="utf-8",
             )
             (package / "worker.py").write_text(
-                "def run(): return 1\\n",
+                "def run(): return 1\n",
                 encoding="utf-8",
             )
             (root / "app.py").write_text(
-                "from pkg import worker\\n"
-                "def start(): worker.run()\\n",
+                "from pkg import worker\n"
+                "def start(): worker.run()\n",
                 encoding="utf-8",
             )
             result = build_project_map(root)

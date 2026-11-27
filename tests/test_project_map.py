@@ -466,6 +466,11 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(cycle.resolution, "direct")
         self.assertEqual(cycle.edge_count, 2)
         self.assertEqual(cycle.possible_edges, 0)
+        self.assertEqual(
+            [(edge.source_module, edge.target_module, edge.line, edge.resolution)
+             for edge in cycle.edges],
+            [("alpha", "beta", 1, "direct"), ("beta", "alpha", 1, "direct")],
+        )
         self.assertEqual(result.summary["circular_dependency_groups"], 1)
 
     def test_detects_a_direct_self_import_cycle(self):
@@ -504,6 +509,12 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(cycle.resolution, "possible")
         self.assertEqual(cycle.edge_count, 2)
         self.assertEqual(cycle.possible_edges, 1)
+        self.assertEqual(
+            [(edge.source_module, edge.target_module, edge.line, edge.resolution)
+             for edge in cycle.edges],
+            [("app", "pkg.service", 1, "possible_submodule"),
+             ("pkg.service", "app", 1, "direct")],
+        )
 
     def test_cycle_detection_is_iterative_for_large_graphs(self):
         count = 1500

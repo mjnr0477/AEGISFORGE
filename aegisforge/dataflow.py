@@ -329,7 +329,7 @@ class _FlowVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _function_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]:
+def _function_parameters(node: ast.FunctionDef) -> tuple[str, ...]:
     args = node.args
     return tuple(
         item.arg for item in (*args.posonlyargs, *args.args, *args.kwonlyargs)
@@ -396,11 +396,12 @@ def _local_function_summaries(
     source: str,
     relative_path: str,
 ) -> dict[str, _FunctionSummary]:
-    # Only unambiguous module-level functions are summarized. Methods, nested
-    # functions, dynamic dispatch, and star-argument binding remain out of scope.
+    # Only unambiguous synchronous module-level functions are summarized.
+    # Async functions, methods, nested functions, dynamic dispatch, and
+    # star-argument binding remain out of scope.
     candidates = [
         node for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if isinstance(node, ast.FunctionDef)
     ]
     counts: dict[str, int] = {}
     for function in candidates:

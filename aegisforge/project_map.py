@@ -215,6 +215,8 @@ def _build_dependencies(modules: list[ModuleRecord]) -> list[DependencyRecord]:
     dependencies: list[DependencyRecord] = []
 
     for importer in modules:
+        if importer.module not in known_modules:
+            continue
         for item in importer.imports:
             base = _absolute_import_base(importer, item)
             if base is None:

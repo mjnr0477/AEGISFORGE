@@ -26,6 +26,8 @@ class WebAssetTests(unittest.TestCase):
         script=files("aegisforge").joinpath("web","app.js").read_text(encoding="utf-8")
         self.assertIn('id="projectMap"',html)
         self.assertIn('renderProjectMap',script)
+        self.assertIn('cycle.edges',script)
+        self.assertIn('edge.line',script)
 
     def test_finding_rendering_does_not_use_inner_html(self):
         script=files("aegisforge").joinpath("web","app.js").read_text(encoding="utf-8")

@@ -75,7 +75,7 @@ def create_local_registry() -> ToolRegistry:
     ))
     registry.register(ActionTool(
         "map_project",
-        "Build a read-only AST index of Python modules, imports, classes, functions, and call sites.",
+        "Build a read-only AST index of Python modules, internal import dependencies, classes, functions, and call sites.",
         build_project_map,
         mutates=False,
     ))
@@ -180,7 +180,8 @@ def run_audit_mission(
                 f"Indexed {result.project_map.summary['modules']} Python module(s), "
                 f"{result.project_map.summary['classes']} class(es), "
                 f"{result.project_map.summary['functions']} function(s), "
-                f"and {result.project_map.summary['calls']} call site(s)."
+                f"{result.project_map.summary['calls']} call site(s), and "
+                f"{result.project_map.summary['dependency_edges']} internal import edge(s)."
             ),
         )
     except (OSError, ValueError, RuntimeError) as exc:

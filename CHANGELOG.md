@@ -5,7 +5,7 @@
 - Add a bounded internal Python import dependency map for absolute, package-relative, and namespace-package references.
 - Label ambiguous from-import submodule matches as possible and omit unresolved external, invalid-relative, and duplicate-module references.
 - Include dependency edges and cross-file call records in JSON and text project maps, audit mission summaries, and the local browser workbench.
-- Add conservative cross-file call edges for uniquely resolved module-scope imports; skip function-local imports, shadowed or mutated aliases, duplicate bindings, and wildcard imports, and label package-attribute/submodule collisions as ambiguous.
+- Add conservative cross-file call edges for uniquely resolved module-scope imports; skip function-local and conditional imports, shadowed or mutated aliases, duplicate bindings, and wildcard imports, and distinguish package data attributes from callable package-symbol/submodule collisions.
 - Keep project mapping AST-only; scanned project code is never imported or executed.
 
 ## 0.1.7 — repository bootstrap

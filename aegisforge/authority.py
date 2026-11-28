@@ -22,6 +22,7 @@ CAPABILITY_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)+$")
 ZERO_HASH = "0" * 64
 MAX_APPROVAL_TTL_SECONDS = 900
 MAX_OUTSTANDING_APPROVALS = 4096
+MAX_AUDIT_LOG_BYTES = 16 * 1024 * 1024
 
 
 class AuthorityError(RuntimeError):
@@ -127,6 +128,11 @@ class _AuditTrail:
                 raise AuditLogIntegrityError("audit log disappeared after it was initialized")
             return
         try:
+            size = self.path.stat().st_size
+            if size > MAX_AUDIT_LOG_BYTES:
+                raise AuditLogIntegrityError(
+                    f"audit log exceeds the {MAX_AUDIT_LOG_BYTES}-byte safety limit"
+                )
             raw_lines = self.path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeError) as exc:
             raise AuditLogIntegrityError(f"cannot read audit log: {exc}") from exc

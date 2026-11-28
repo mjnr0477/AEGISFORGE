@@ -69,13 +69,21 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def call(self, name: str, *args: Any, approve_mutation: bool = False, **kwargs: Any) -> Any:
+        """Invoke a read-only tool without policy context.
+
+        The legacy boolean is accepted for call-site compatibility but never
+        authorizes a mutation. Mutating handlers must use call_authorized(), which
+        checks an exact resource grant and consumes a one-time approval token.
+        """
+        del approve_mutation  # A caller-controlled boolean is not an authorization.
         try:
             tool = self._tools[name]
         except KeyError as exc:
             raise KeyError(f"unknown local tool: {name}") from exc
-        if tool.mutates and not approve_mutation:
+        if tool.mutates:
             raise ToolPermissionError(
-                f"tool '{name}' changes local project data; explicit approval is required"
+                f"tool '{name}' is mutating; use call_authorized() with an exact grant "
+                "and one-time approval token"
             )
         return tool.handler(*args, **kwargs)
 

@@ -345,12 +345,12 @@ def run_audit_mission(
 
     def invoke_tool(name: str, *args: Any, approval: str | None = None, **kwargs: Any) -> Any:
         if authority is None:
-            return tools.call(
-                name,
-                *args,
-                approve_mutation=(name == "apply_supported_repairs" and apply_supported_repairs),
-                **kwargs,
-            )
+            if name == "apply_supported_repairs":
+                # Preserve the explicit, legacy mission flag without routing a
+                # mutation through ToolRegistry.call(), whose compatibility
+                # boolean is intentionally not an authorization mechanism.
+                return apply_repairs(*args, **kwargs)
+            return tools.call(name, *args, **kwargs)
         return tools.call_authorized(
             name,
             *args,

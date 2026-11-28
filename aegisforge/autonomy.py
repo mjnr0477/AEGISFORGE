@@ -143,13 +143,13 @@ class ToolRegistry:
                 authority.record_execution_result(
                     start_sequence=start_sequence,
                     execution_id=execution_id,
-                    outcome="failed",
+                    outcome="timed_out" if isinstance(handler_error, TimeoutError) else "failed",
                     duration_ms=duration_ms,
                     error_type=type(handler_error).__name__,
                 )
             except Exception as audit_error:
                 raise ToolExecutionAuditError(
-                    "tool failed, but its failure could not be recorded; reconcile before retrying"
+                    "tool raised, but its outcome could not be recorded; reconcile before retrying"
                 ) from audit_error
             raise
         duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)

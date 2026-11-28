@@ -170,7 +170,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13; it also
 
 ## Roadmap
 
-Next: connect the authority kernel to authenticated, narrowly scoped local adapters, then expand analysis and isolated engineering missions. AegisForge is not a general autonomous intelligence or a universal system controller.
+The adapter boundary and an in-memory simulator are now included. Next: build one narrowly scoped, real integration behind that boundary only after its authentication, resource identity, failure modes, and rollback behavior are independently reviewed and tested. AegisForge is not a general autonomous intelligence or a universal system controller.
 
 ## License
 

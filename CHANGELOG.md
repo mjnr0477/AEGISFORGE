@@ -11,6 +11,8 @@
 - Added resource-scope resolvers so tools bind grants to the actual target argument.
 - Integrated mission mapping, scanning, repair previews, approved repair application, and post-repair verification with the Authority Kernel.
 - Added tests for exact project binding, missing grants, missing approvals, and successful authorized repairs.
+- Added an explicit authority-gated adapter registry with per-operation capability, input validation, mutation classification, and exact resource resolution.
+- Added an in-memory simulation adapter and tests for approval gating, denial paths, unknown operations, and metadata-only catalogs; no live service/device access is enabled.
 
 
 ## 0.1.7 — repository bootstrap

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from aegisforge.authority import (
     AuditLogIntegrityError,
@@ -110,6 +111,34 @@ class AuthorityKernelTests(unittest.TestCase):
         )
         self.assertFalse(expired.allowed)
         self.assertEqual(expired.reason, "approval_expired")
+
+    def test_outstanding_approval_storage_is_bounded_and_expired_tokens_are_pruned(self):
+        kernel = self.make_kernel()
+        with patch("aegisforge.authority.MAX_OUTSTANDING_APPROVALS", 1):
+            first_token = kernel.issue_approval(
+                subject="operator", capability="project.repair",
+                resource="project:/repo-a", approver="owner", ttl_seconds=1,
+            )
+            with self.assertRaisesRegex(AuthorityError, "too many outstanding approvals"):
+                kernel.issue_approval(
+                    subject="operator", capability="project.repair",
+                    resource="project:/repo-a", approver="owner",
+                )
+            self.now += timedelta(seconds=2)
+            second_token = kernel.issue_approval(
+                subject="operator", capability="project.repair",
+                resource="project:/repo-a", approver="owner",
+            )
+
+        self.assertNotIn(first_token, kernel._approvals)
+        self.assertIn(second_token, kernel._approvals)
+        self.assertEqual(len(kernel._approvals), 1)
+        expired_but_pruned = kernel.authorize(
+            subject="operator", capability="project.repair",
+            resource="project:/repo-a", approval_token=first_token,
+        )
+        self.assertFalse(expired_but_pruned.allowed)
+        self.assertEqual(expired_but_pruned.reason, "invalid_or_consumed_approval")
 
     def test_audit_log_is_hash_chained_and_reloaded(self):
         with tempfile.TemporaryDirectory() as folder:

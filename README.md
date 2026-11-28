@@ -79,6 +79,48 @@ A scan returns exit code 1 when a finding meets the selected --fail-on threshold
 
 The authority kernel evaluates a policy; it does not execute the requested operation. Policies use exact subject, capability, and resource matches, with an expiry on every grant. Unknown capabilities, missing grants, and expired grants are denied. Wildcards and implicit inheritance are not supported.
 
+The Python mission API can enforce the policy before every registered operation. The tool registry derives each project resource from the actual target argument, so callers cannot authorize one path and pass another path to the handler:
+
+~~~python
+from aegisforge.authority import AuthorityKernel, DEFAULT_CAPABILITIES
+from aegisforge.autonomy import run_audit_mission
+
+kernel = AuthorityKernel.from_policy_file(
+    DEFAULT_CAPABILITIES,
+    "authority-policy.json",
+    audit_path=".aegisforge/authority.jsonl",
+)
+preview = run_audit_mission(
+    "./my-project",
+    authority=kernel,
+    subject="authenticated-user-id",  # supplied by the authenticated host
+)
+~~~
+
+For a repair, the host must first authenticate the approver and obtain explicit consent. It then issues an approval for the exact target scope and passes the short-lived token to a separate mission call:
+
+~~~python
+from pathlib import Path
+
+target = Path("./my-project").expanduser().resolve()
+resource = f"project:{target.as_posix()}"
+token = kernel.issue_approval(
+    subject="authenticated-user-id",
+    capability="project.repair",
+    resource=resource,
+    approver="authenticated-approver-id",
+)
+result = run_audit_mission(
+    target,
+    apply_supported_repairs=True,
+    authority=kernel,
+    subject="authenticated-user-id",
+    approval_token=token,
+)
+~~~
+
+A token is single-use and must be newly issued after a fresh approval. The host remains responsible for authentication, policy-file protection, and presenting the proposed diff to the approver. The legacy CLI mission mode remains available for local workflows; it does not authenticate users and is not a substitute for the host-integrated Authority Kernel path.
+
 Example policy file:
 
 ~~~json

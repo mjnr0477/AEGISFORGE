@@ -141,6 +141,30 @@ def _project_resource(target: str | Path, *_args: Any, **_kwargs: Any) -> str:
     return f"project:{root.as_posix()}"
 
 
+def _project_repair_resource(
+    target: str | Path,
+    proposals: list[RepairProposal],
+    backup_dir: str | Path | None = None,
+    *_args: Any,
+    **_kwargs: Any,
+) -> str:
+    """Bind repair authorization to the project and keep backup writes in scope."""
+    root = Path(target).expanduser().resolve()
+    if backup_dir is not None:
+        backup_root = Path(backup_dir).expanduser().resolve()
+        try:
+            backup_root.relative_to(root)
+        except ValueError as exc:
+            raise ToolPermissionError(
+                "repair backup directory must remain inside the authorized project scope"
+            ) from exc
+        if backup_root == root:
+            raise ToolPermissionError(
+                "repair backup directory must be a dedicated directory inside the project"
+            )
+    return f"project:{root.as_posix()}"
+
+
 def create_local_registry() -> ToolRegistry:
     """Create the built-in, offline tool set."""
     registry = ToolRegistry()
@@ -174,7 +198,7 @@ def create_local_registry() -> ToolRegistry:
         apply_repairs,
         mutates=True,
         capability="project.repair",
-        scope_resolver=_project_resource,
+        scope_resolver=_project_repair_resource,
     ))
     return registry
 

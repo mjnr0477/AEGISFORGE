@@ -483,7 +483,7 @@ class AuthorityKernel:
         they may contain secrets or untrusted data.
         """
         _validate_label(execution_id, "execution_id", 128)
-        if outcome not in {"succeeded", "failed", "timed_out"}:
+        if not isinstance(outcome, str) or outcome not in {"succeeded", "failed", "timed_out"}:
             raise ValueError("execution outcome must be 'succeeded', 'failed', or 'timed_out'")
         if isinstance(start_sequence, bool) or not isinstance(start_sequence, int) or start_sequence < 1:
             raise ValueError("start_sequence must be a positive integer")

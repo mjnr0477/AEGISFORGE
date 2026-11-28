@@ -410,6 +410,116 @@ class AuthorityKernel:
             }, now)
             return Decision(allowed, subject, capability, resource, reason, sequence)
 
+    def record_execution_started(
+        self,
+        *,
+        decision: Decision,
+        execution_id: str,
+        adapter_id: str,
+        operation: str,
+    ) -> int:
+        """Record that a handler is about to run for a verified allow decision.
+
+        This must be called after authorization and before invoking the handler.
+        If the audit append fails, the handler must not be invoked.
+        """
+        if not isinstance(decision, Decision) or not decision.allowed:
+            raise AuthorityError("execution can only start from an allowed authorization decision")
+        _validate_label(execution_id, "execution_id", 128)
+        _validate_label(adapter_id, "adapter_id", 64)
+        _validate_label(operation, "operation", 64)
+        with self._lock:
+            entries = self._audit.entries()
+            sequence = decision.audit_sequence
+            if isinstance(sequence, bool) or not isinstance(sequence, int) or not 1 <= sequence <= len(entries):
+                raise AuthorityError("authorization decision sequence is not present in the audit log")
+            event = entries[sequence - 1].get("event")
+            if not isinstance(event, dict) or event != {
+                "type": "authorization_decision",
+                "subject": decision.subject,
+                "capability": decision.capability,
+                "resource": decision.resource,
+                "allowed": True,
+                "reason": decision.reason,
+            }:
+                raise AuthorityError("execution start does not match a verified allowed decision")
+            if any(
+                isinstance(item.get("event"), dict)
+                and item["event"].get("execution_id") == execution_id
+                for item in entries
+            ):
+                raise AuthorityError("execution_id has already been used")
+            now = self._now()
+            return self._audit.append({
+                "type": "execution_started",
+                "execution_id": execution_id,
+                "authorization_sequence": sequence,
+                "subject": decision.subject,
+                "capability": decision.capability,
+                "resource": decision.resource,
+                "adapter_id": adapter_id,
+                "operation": operation,
+            }, now)
+
+    def record_execution_result(
+        self,
+        *,
+        start_sequence: int,
+        execution_id: str,
+        outcome: str,
+        duration_ms: int,
+        error_type: str | None = None,
+    ) -> int:
+        """Record a handler outcome against one prior execution-start event.
+
+        Error messages and operation results are intentionally excluded because
+        they may contain secrets or untrusted data.
+        """
+        _validate_label(execution_id, "execution_id", 128)
+        if outcome not in {"succeeded", "failed"}:
+            raise ValueError("execution outcome must be 'succeeded' or 'failed'")
+        if isinstance(start_sequence, bool) or not isinstance(start_sequence, int) or start_sequence < 1:
+            raise ValueError("start_sequence must be a positive integer")
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms < 0:
+            raise ValueError("duration_ms must be a non-negative integer")
+        if outcome == "failed":
+            _validate_label(error_type, "error_type", 256)
+        elif error_type is not None:
+            raise ValueError("successful execution cannot include an error_type")
+        with self._lock:
+            entries = self._audit.entries()
+            if start_sequence > len(entries):
+                raise AuthorityError("execution start sequence is not present in the audit log")
+            start_event = entries[start_sequence - 1].get("event")
+            if (
+                not isinstance(start_event, dict)
+                or start_event.get("type") != "execution_started"
+                or start_event.get("execution_id") != execution_id
+            ):
+                raise AuthorityError("execution result does not match its start event")
+            if any(
+                isinstance(item.get("event"), dict)
+                and item["event"].get("type") == "execution_result"
+                and item["event"].get("start_sequence") == start_sequence
+                for item in entries
+            ):
+                raise AuthorityError("execution result has already been recorded")
+            now = self._now()
+            return self._audit.append({
+                "type": "execution_result",
+                "execution_id": execution_id,
+                "start_sequence": start_sequence,
+                "authorization_sequence": start_event["authorization_sequence"],
+                "subject": start_event["subject"],
+                "capability": start_event["capability"],
+                "resource": start_event["resource"],
+                "adapter_id": start_event["adapter_id"],
+                "operation": start_event["operation"],
+                "outcome": outcome,
+                "duration_ms": duration_ms,
+                "error_type": error_type,
+            }, now)
+
     def capability_is_mutating(self, capability: str) -> bool | None:
         """Return a capability's mutation classification, or None when unknown."""
         spec = self._capabilities.get(capability)

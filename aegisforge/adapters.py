@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import secrets
+import time
 from dataclasses import dataclass
 from threading import RLock
 from types import MappingProxyType
@@ -32,6 +34,10 @@ class AdapterPermissionDenied(PermissionError):
 
 class AdapterApprovalRequired(AdapterPermissionDenied):
     """Raised when a mutation has a grant but no valid one-time approval."""
+
+
+class AdapterExecutionAuditError(AdapterError):
+    """Raised when a handler outcome cannot be durably recorded."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +269,45 @@ class AdapterRegistry:
                 "invalid_or_consumed_approval",
             } else AdapterPermissionDenied
             raise error(f"{decision.reason}: {operation.capability} on {resource}")
-        return registered.handlers[operation_name](safe_arguments)
+
+        execution_id = secrets.token_urlsafe(24)
+        start_sequence = self._authority.record_execution_started(
+            decision=decision,
+            execution_id=execution_id,
+            adapter_id=adapter_id,
+            operation=operation_name,
+        )
+        started_ns = time.monotonic_ns()
+        try:
+            result = registered.handlers[operation_name](safe_arguments)
+        except Exception as handler_error:
+            duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
+            try:
+                self._authority.record_execution_result(
+                    start_sequence=start_sequence,
+                    execution_id=execution_id,
+                    outcome="failed",
+                    duration_ms=duration_ms,
+                    error_type=type(handler_error).__name__,
+                )
+            except Exception as audit_error:
+                raise AdapterExecutionAuditError(
+                    "handler failed, but its failure could not be recorded; reconcile before retrying"
+                ) from audit_error
+            raise
+        duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
+        try:
+            self._authority.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id=execution_id,
+                outcome="succeeded",
+                duration_ms=duration_ms,
+            )
+        except Exception as audit_error:
+            raise AdapterExecutionAuditError(
+                "handler returned, but its success could not be recorded; reconcile before retrying"
+            ) from audit_error
+        return result
 
 
 def _validate_empty(arguments: Mapping[str, Any]) -> None:

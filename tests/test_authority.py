@@ -11,6 +11,7 @@ from aegisforge.authority import (
     AuthorityKernel,
     CapabilitySpec,
     Grant,
+    MAX_AUDIT_LOG_BYTES,
 )
 
 
@@ -332,6 +333,15 @@ class AuthorityKernelTests(unittest.TestCase):
                 kernel.audit_entries()
             with self.assertRaisesRegex(AuditLogIntegrityError, "audit log disappeared"):
                 kernel.pending_executions()
+
+    def test_oversized_audit_ledger_is_rejected_before_reading(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audit.jsonl"
+            with path.open("wb") as handle:
+                handle.truncate(MAX_AUDIT_LOG_BYTES + 1)
+
+            with self.assertRaisesRegex(AuditLogIntegrityError, "safety limit"):
+                self.make_kernel(audit_path=path)
 
     def test_audit_entries_are_returned_as_defensive_copies(self):
         kernel = self.make_kernel()

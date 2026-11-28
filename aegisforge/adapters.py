@@ -14,7 +14,7 @@ from typing import Any, Callable, Mapping
 
 from .authority import CAPABILITY_RE, AuthorityKernel
 
-IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
+IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
 
 class AdapterError(RuntimeError):
@@ -263,7 +263,7 @@ class SimulationAdapter:
     __slots__ = ("_resource_id", "_mode", "_restart_count", "_lock")
 
     def __init__(self, resource_id: str = "demo-service") -> None:
-        if not isinstance(resource_id, str) or not IDENTIFIER_RE.fullmatch(resource_id):
+        if type(resource_id) is not str or not IDENTIFIER_RE.fullmatch(resource_id):
             raise ValueError("resource_id must be a lowercase identifier")
         self._resource_id = resource_id
         self._mode = "normal"

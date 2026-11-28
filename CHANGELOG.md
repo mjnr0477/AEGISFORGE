@@ -15,6 +15,7 @@
 - Added an in-memory simulation adapter and tests for approval gating, denial paths, unknown operations, and metadata-only catalogs; no live service/device access is enabled.
 - Restricted adapter payloads to bounded JSON data and froze nested inputs before validation, scope resolution, and handler execution.
 - Snapshotted registered operation handlers and added separate simulated service-restart and device-mode operations with distinct capabilities.
+- Added CI coverage for the interactive simulator's approved and declined mutation paths, including audit-ledger assertions.
 
 
 ## 0.1.7 — repository bootstrap

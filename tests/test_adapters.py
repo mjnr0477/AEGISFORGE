@@ -1,4 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
 
@@ -136,6 +138,44 @@ class AdapterRegistryTests(unittest.TestCase):
             self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
                                  subject="operator", arguments={"mode": "unsafe"})
 
+
+    def test_one_time_approval_cannot_be_reused_by_concurrent_calls(self):
+        executions = []
+        execution_lock = Lock()
+        spec = AdapterSpec(
+            "concurrent-test", "concurrent one-time approval test",
+            {"restart": OperationSpec("restart", "service.restart", True,
+                                      lambda arguments: None)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+
+        def handler(arguments):
+            del arguments
+            with execution_lock:
+                executions.append("executed")
+            return "executed"
+
+        registry = AdapterRegistry(self.kernel)
+        registry.register(spec, {"restart": handler})
+        token = self.kernel.issue_approval(
+            subject="operator", capability="service.restart",
+            resource="simulation:demo-service", approver="authenticated-owner",
+        )
+
+        def invoke_once():
+            try:
+                return registry.invoke(
+                    adapter_id="concurrent-test", operation_name="restart",
+                    subject="operator", arguments={}, approval_token=token,
+                )
+            except AdapterApprovalRequired:
+                return "denied"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: invoke_once(), range(2)))
+        self.assertEqual(results.count("executed"), 1)
+        self.assertEqual(results.count("denied"), 1)
+        self.assertEqual(executions, ["executed"])
 
     def test_restart_uses_separate_service_capability_and_single_use_approval(self):
         token = self.kernel.issue_approval(

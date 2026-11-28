@@ -5,7 +5,7 @@ from pathlib import Path
 
 from datetime import datetime, timedelta, timezone
 
-from aegisforge.authority import AuthorityKernel, CapabilitySpec, Grant
+from aegisforge.authority import AuthorityKernel, CapabilitySpec, Grant, DEFAULT_CAPABILITIES
 from aegisforge.autonomy import (
     ActionTool,
     ToolPermissionError,
@@ -37,18 +37,19 @@ class ToolRegistryTests(unittest.TestCase):
         registry.register(ActionTool(
             "inspect_project", "Read-only example", lambda value: value.upper(),
             mutates=False, capability="project.inspect",
+            scope_resolver=lambda value: f"project:{Path(value).resolve().as_posix()}",
         ))
         self.assertEqual(
             registry.call_authorized(
-                "inspect_project", "ready", authority=authority,
-                subject="operator", resource="project:/repo",
+                "inspect_project", "/repo", authority=authority,
+                subject="operator",
             ),
             "READY",
         )
         with self.assertRaises(ToolPermissionError):
             registry.call_authorized(
-                "inspect_project", "no", authority=authority,
-                subject="operator", resource="project:/other",
+                "inspect_project", "/other", authority=authority,
+                subject="operator",
             )
 
     def test_authorized_mutation_requires_single_use_approval(self):
@@ -59,13 +60,14 @@ class ToolRegistryTests(unittest.TestCase):
         )
         registry = ToolRegistry()
         registry.register(ActionTool(
-            "repair_project", "Writes project files", lambda: "repaired",
+            "repair_project", "Writes project files", lambda target: f"repaired:{target}",
             mutates=True, capability="project.repair",
+            scope_resolver=lambda target: f"project:{Path(target).resolve().as_posix()}",
         ))
         with self.assertRaisesRegex(ToolPermissionError, "approval_required"):
             registry.call_authorized(
-                "repair_project", authority=authority,
-                subject="operator", resource="project:/repo",
+                "repair_project", "/repo", authority=authority,
+                subject="operator",
             )
         token = authority.issue_approval(
             subject="operator", capability="project.repair",
@@ -73,28 +75,29 @@ class ToolRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.call_authorized(
-                "repair_project", authority=authority,
-                subject="operator", resource="project:/repo", approval_token=token,
+                "repair_project", "/repo", authority=authority,
+                subject="operator", approval_token=token,
             ),
-            "repaired",
+            "repaired:/repo",
         )
         with self.assertRaisesRegex(ToolPermissionError, "invalid_or_consumed_approval"):
             registry.call_authorized(
-                "repair_project", authority=authority,
-                subject="operator", resource="project:/repo", approval_token=token,
+                "repair_project", "/repo", authority=authority,
+                subject="operator", approval_token=token,
             )
 
     def test_authorized_call_rejects_tool_capability_mutation_mismatch(self):
         authority = AuthorityKernel([CapabilitySpec("project.inspect", "Read-only")])
         registry = ToolRegistry()
         registry.register(ActionTool(
-            "unsafe_tool", "Incorrectly classified", lambda: None,
+            "unsafe_tool", "Incorrectly classified", lambda target: None,
             mutates=True, capability="project.inspect",
+            scope_resolver=lambda target: f"project:{Path(target).resolve().as_posix()}",
         ))
         with self.assertRaisesRegex(ToolPermissionError, "classification does not match"):
             registry.call_authorized(
-                "unsafe_tool", authority=authority,
-                subject="operator", resource="project:/repo",
+                "unsafe_tool", "/repo", authority=authority,
+                subject="operator",
             )
 
     def test_rejects_duplicate_tool_names(self):
@@ -218,6 +221,127 @@ class MissionRunnerTests(unittest.TestCase):
             proposal_steps=[step for step in result.steps if step.name=="propose_repairs"]
             self.assertEqual(len(proposal_steps),1)
             self.assertEqual(proposal_steps[0].status,"skipped")
+
+    def test_authorized_mission_preview_uses_exact_project_grant(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            resource = f"project:{root.resolve().as_posix()}"
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [Grant("operator", "project.inspect", resource, now + timedelta(minutes=5))],
+            )
+            result = run_audit_mission(root, authority=authority, subject="operator")
+            self.assertEqual(result.status, "approval_required")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(len(result.proposed_repairs), 1)
+            self.assertTrue(all(
+                entry["event"]["resource"] == resource
+                for entry in authority.audit_entries()
+                if entry["event"]["type"] == "authorization_decision"
+            ))
+
+    def test_authorized_mission_apply_requires_single_use_approval(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            resource = f"project:{root.resolve().as_posix()}"
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [
+                    Grant("operator", "project.inspect", resource, now + timedelta(minutes=5)),
+                    Grant("operator", "project.repair", resource, now + timedelta(minutes=5)),
+                ],
+            )
+            token = authority.issue_approval(
+                subject="operator", capability="project.repair",
+                resource=resource, approver="owner",
+            )
+            result = run_audit_mission(
+                root, apply_supported_repairs=True, authority=authority,
+                subject="operator", approval_token=token,
+            )
+            self.assertEqual(result.status, "completed")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=false\\n")
+            self.assertEqual(len(result.backups), 1)
+            self.assertEqual(result.final_findings, [])
+
+    def test_authorized_mission_missing_approval_does_not_change_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            resource = f"project:{root.resolve().as_posix()}"
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [
+                    Grant("operator", "project.inspect", resource, now + timedelta(minutes=5)),
+                    Grant("operator", "project.repair", resource, now + timedelta(minutes=5)),
+                ],
+            )
+            result = run_audit_mission(
+                root, apply_supported_repairs=True, authority=authority, subject="operator"
+            )
+            self.assertEqual(result.status, "approval_required")
+            self.assertEqual(result.steps[-1].status, "pending_approval")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertIsNotNone(result.final_scan)
+
+    def test_authorized_mission_denies_repair_without_repair_grant(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            resource = f"project:{root.resolve().as_posix()}"
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [Grant("operator", "project.inspect", resource, now + timedelta(minutes=5))],
+            )
+            result = run_audit_mission(
+                root, apply_supported_repairs=True, authority=authority, subject="operator"
+            )
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertIn("no_active_exact_scope_grant", " ".join(result.errors))
+            self.assertIn("AF-CFG-001", {item.rule_id for item in result.manual_review_findings})
+
+    def test_authorized_mission_denies_different_target_even_when_caller_claims_other_scope(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [Grant("operator", "project.inspect", "project:/different-project", now + timedelta(minutes=5))],
+            )
+            result = run_audit_mission(root, authority=authority, subject="operator")
+            self.assertEqual(result.status, "failed")
+            self.assertIsNone(result.initial_scan)
+            self.assertIn("no_active_exact_scope_grant", " ".join(result.errors))
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+
+    def test_authorized_tool_requires_resource_scope_resolver(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "unbound_inspector", "Unbound", lambda: "ran",
+            capability="project.inspect",
+        ))
+        with self.assertRaisesRegex(ToolPermissionError, "resource scope resolver"):
+            registry.call_authorized(
+                "unbound_inspector", authority=authority, subject="operator",
+            )
 
     def test_custom_registry_mutation_gate_is_used(self):
         registry=create_local_registry()

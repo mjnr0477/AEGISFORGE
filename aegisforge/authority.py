@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -127,15 +128,36 @@ class _AuditTrail:
             if previous_count:
                 raise AuditLogIntegrityError("audit log disappeared after it was initialized")
             return
+        descriptor: int | None = None
         try:
-            size = self.path.stat().st_size
-            if size > MAX_AUDIT_LOG_BYTES:
+            flags = os.O_RDONLY
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_NONBLOCK", 0)
+            descriptor = os.open(self.path, flags)
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = None
+                metadata = os.fstat(handle.fileno())
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise AuditLogIntegrityError("audit log must be a regular file")
+                if metadata.st_size > MAX_AUDIT_LOG_BYTES:
+                    raise AuditLogIntegrityError(
+                        f"audit log exceeds the {MAX_AUDIT_LOG_BYTES}-byte safety limit"
+                    )
+                # Bound the actual read as well as checking metadata. The file may
+                # grow after fstat(), so never call an unbounded read_text()/read().
+                raw_bytes = handle.read(MAX_AUDIT_LOG_BYTES + 1)
+            if len(raw_bytes) > MAX_AUDIT_LOG_BYTES:
                 raise AuditLogIntegrityError(
                     f"audit log exceeds the {MAX_AUDIT_LOG_BYTES}-byte safety limit"
                 )
-            raw_lines = self.path.read_text(encoding="utf-8").splitlines()
+            raw_lines = raw_bytes.decode("utf-8").splitlines()
+        except AuditLogIntegrityError:
+            raise
         except (OSError, UnicodeError) as exc:
             raise AuditLogIntegrityError(f"cannot read audit log: {exc}") from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
         if len(raw_lines) < previous_count:
             raise AuditLogIntegrityError("audit log was truncated after it was initialized")
         previous = ZERO_HASH

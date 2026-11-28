@@ -101,6 +101,8 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         if value is None or type(value) is bool:
             return value
         if type(value) is int:
+            if value.bit_length() > 63:
+                raise ValueError("integer arguments must fit in a signed 64-bit value")
             budget["bytes"] += len(str(value))
             return value
         if type(value) is float:
@@ -109,7 +111,10 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
             budget["bytes"] += len(repr(value))
             return value
         if type(value) is str:
-            encoded_length = len(value.encode("utf-8"))
+            try:
+                encoded_length = len(value.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise ValueError("argument strings must contain valid UTF-8 text") from exc
             if encoded_length > 8192:
                 raise ValueError("argument strings may not exceed 8192 UTF-8 bytes")
             budget["bytes"] += encoded_length
@@ -125,7 +130,10 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
             for key, item in value.items():
                 if type(key) is not str or not key or len(key) > 256:
                     raise TypeError("argument object keys must be non-empty strings of at most 256 characters")
-                budget["bytes"] += len(key.encode("utf-8"))
+                try:
+                    budget["bytes"] += len(key.encode("utf-8"))
+                except UnicodeEncodeError as exc:
+                    raise ValueError("argument keys must contain valid UTF-8 text") from exc
                 frozen[key] = clone(item, depth + 1)
             return MappingProxyType(frozen)
         raise TypeError(f"unsupported argument value type: {type(value).__name__}")

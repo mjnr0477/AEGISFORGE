@@ -536,6 +536,43 @@ class AuthorityKernel:
         spec = self._capabilities.get(capability)
         return spec.mutates if spec is not None else None
 
+    def pending_executions(self) -> list[dict[str, object]]:
+        """Return started executions that have no recorded terminal outcome.
+
+        A pending entry is outcome-unknown, not proof that the handler failed.
+        Hosts must reconcile the referenced resource before retrying it.
+        """
+        entries = self._audit.entries()
+        starts: dict[int, dict[str, object]] = {}
+        completed: set[int] = set()
+        for entry in entries:
+            event = entry.get("event")
+            if not isinstance(event, dict):
+                continue
+            sequence = entry.get("sequence")
+            if event.get("type") == "execution_started" and isinstance(sequence, int):
+                starts[sequence] = {
+                    "status": "outcome_unknown",
+                    "start_sequence": sequence,
+                    "timestamp": entry.get("timestamp"),
+                    "execution_id": event.get("execution_id"),
+                    "authorization_sequence": event.get("authorization_sequence"),
+                    "subject": event.get("subject"),
+                    "capability": event.get("capability"),
+                    "resource": event.get("resource"),
+                    "adapter_id": event.get("adapter_id"),
+                    "operation": event.get("operation"),
+                }
+            elif event.get("type") == "execution_result":
+                start_sequence = event.get("start_sequence")
+                if isinstance(start_sequence, int) and not isinstance(start_sequence, bool):
+                    completed.add(start_sequence)
+        return [
+            record
+            for sequence, record in starts.items()
+            if sequence not in completed
+        ]
+
     def audit_entries(self) -> list[dict[str, object]]:
         """Return a copy of verified decision-log entries."""
         return self._audit.entries()

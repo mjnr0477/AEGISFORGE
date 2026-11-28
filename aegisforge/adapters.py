@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from threading import RLock
+from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from .authority import AuthorityKernel
@@ -67,9 +68,9 @@ class AdapterSpec:
             raise ValueError("adapter must declare at least one operation")
         copied = dict(self.operations)
         for key, operation in copied.items():
-            if key != operation.name or not isinstance(operation, OperationSpec):
+            if not isinstance(operation, OperationSpec) or key != operation.name:
                 raise ValueError("operation keys must match OperationSpec names")
-        object.__setattr__(self, "operations", copied)
+        object.__setattr__(self, "operations", MappingProxyType(copied))
 
 
 @dataclass(frozen=True, slots=True)

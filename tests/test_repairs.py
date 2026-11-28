@@ -87,14 +87,14 @@ class RepairTests(unittest.TestCase):
             proposals=propose_repairs(root)
             real_read=repairs.read_source_file
             calls=0
-            def fail_on_second_write_check(path, max_bytes=1_000_000):
+            def fail_on_second_write_check(path, max_bytes=1_000_000, *, root=None):
                 nonlocal calls
                 calls+=1
                 # Two reads validate the original snapshots; the third checks a.env
                 # immediately before writing; the fourth fails before b.env is written.
                 if calls==4:
                     raise ValueError("simulated file grew beyond the read limit")
-                return real_read(path,max_bytes)
+                return real_read(path,max_bytes,root=root)
             with patch("aegisforge.repairs.read_source_file",side_effect=fail_on_second_write_check):
                 with self.assertRaisesRegex(ValueError,"grew beyond the read limit"):
                     apply_repairs(root,proposals)

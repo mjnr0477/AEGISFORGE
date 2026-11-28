@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.0 — scoped authority kernel
+- Added a read-only `authority audit` CLI command that verifies the saved hash chain and exposes unresolved execution starts without retrying them.
+
+- Added a default-deny capability model with exact-resource, subject-specific and expiring grants.
+- Required short-lived, exact-scope, single-use approval tokens for capabilities marked as mutating.
+- Added a hash-chained JSONL decision ledger that fails closed on detected tampering or write failures.
+- Added a policy-file loader and an `authority check` CLI command; checks evaluate permission only and never execute the requested operation.
+- Added tests for scope isolation, expiration, approval reuse, policy validation, audit integrity and CLI outcomes.
+- Clarified that external service/device adapters and authenticated approval UX are separate future integrations.
+- Added resource-scope resolvers so tools bind grants to the actual target argument.
+- Integrated mission mapping, scanning, repair previews, approved repair application, and post-repair verification with the Authority Kernel.
+- Added tests for exact project binding, missing grants, missing approvals, and successful authorized repairs.
+- Added an explicit authority-gated adapter registry with per-operation capability, input validation, mutation classification, and exact resource resolution.
+- Added an in-memory simulation adapter and tests for approval gating, denial paths, unknown operations, and metadata-only catalogs; no live service/device access is enabled.
+- Restricted adapter payloads to bounded JSON data and froze nested inputs before validation, scope resolution, and handler execution.
+- Snapshotted registered operation handlers and added separate simulated service-restart and device-mode operations with distinct capabilities.
+- Added CI coverage for the interactive simulator's approved and declined mutation paths, including audit-ledger assertions.
+- Packaged the simulator walkthrough as the `aegisforge-sim-demo` console command, with safe EOF/interrupt behavior and wheel-entry-point checks.
+- Added a concurrent invocation regression test proving a one-time mutation approval can execute only once when two calls race.
+- Added hash-chained execution lifecycle records: handler start before invocation and success/failure/timeout outcome afterward, linked to the exact authorization decision.
+- Added a read-only pending-execution view to identify starts missing a terminal result and support safe host reconciliation.
+- Added failure-boundary tests ensuring audit failure prevents handler start and an unrecorded final outcome is surfaced as requiring reconciliation.
+- Applied the same execution start/result lifecycle to the authorized local ToolRegistry used by project missions.
+- Recorded Python TimeoutError as a distinct timed_out result, without claiming that the registry forcibly interrupts handlers.
+- Prune expired pending approvals and cap outstanding one-time tokens at 4,096 per kernel.
+- Packaged the simulator walkthrough as `aegisforge-sim-demo` and made non-interactive EOF/interrupt defaults decline all pending mutations.
+
+
 ## 0.1.7 — repository bootstrap
 
 - Added Python package metadata and module/console entry points.

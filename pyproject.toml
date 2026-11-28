@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegisforge"
-version = "0.4.2"
+version = "0.5.0"
 description = "Offline, evidence-based source and configuration security analysis"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 aegisforge = "aegisforge.cli:main"
+aegisforge-sim-demo = "aegisforge.simulation_demo:main"
 
 [tool.setuptools.packages.find]
 include = ["aegisforge*"]

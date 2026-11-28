@@ -2,9 +2,9 @@
 
 **Offline, local-first software security workbench and deterministic engineering runner.** AegisForge reads source code and configuration, reports evidence-backed findings, builds a structural index of Python projects, checks selected local source-to-sink flows, tracks baselines, prepares repairs, and sequences approved tools. It requires no external AI API, telemetry service, or cloud model.
 
-## Current repository build: 0.4.2
+## Current repository build: 0.5.0
 
-The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, and a permission-gated local mission runner.
+The repository includes static analyzers, a bounded scanner, a read-only Python project map, conservative Python data-flow checks, text/Markdown/JSON/SARIF reports, local finding baselines, preview-first repairs, a loopback-only browser workbench, a deterministic mission runner, and a default-deny authority kernel.
 
 ### Included checks
 
@@ -62,6 +62,12 @@ aegisforge repair ./my-project --apply
 aegisforge tools --format json
 aegisforge mission audit ./my-project --format json
 aegisforge mission audit ./my-project --apply-supported-repairs
+
+aegisforge authority check --policy ./authority-policy.json \
+  --audit-log ./.aegisforge/authority.jsonl \
+  --subject operator --capability project.inspect \
+  --resource project:/absolute/path/to/my-project
+aegisforge authority audit --audit-log ./.aegisforge/authority.jsonl
 ~~~
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
@@ -69,6 +75,79 @@ Baseline comparison reports new, known, and resolved findings. Repair mode previ
 The mission runner is a deterministic local workflow engine, not a general AI model. It maps the Python structure, scans the project, prepares supported repair proposals, and pauses for approval before any file changes. Its report separates built-in repair proposals from findings that still need manual security review. If a mission fails or becomes incomplete, it returns all remaining findings to the manual-review list. --apply-supported-repairs is the explicit approval switch; the mission then runs a fresh verification scan.
 
 A scan returns exit code 1 when a finding meets the selected --fail-on threshold (high by default), 0 when no threshold is met, and 2 for an operational error or incomplete scan. Mission runs return 2 when the workflow fails or cannot complete its scan.
+
+### Scoped authority checks
+
+The authority kernel evaluates a policy; it does not execute the requested operation. Policies use exact subject, capability, and resource matches, with an expiry on every grant. Unknown capabilities, missing grants, and expired grants are denied. Wildcards and implicit inheritance are not supported.
+
+The read-only `aegisforge authority audit --audit-log PATH` command verifies the saved hash chain before displaying events and unresolved executions. A missing or tampered log is an operational error; an execution start without a result is shown as outcome-unknown and is never retried by the command.
+
+The Python mission API can enforce the policy before every registered operation. The tool registry derives each project resource from the actual target argument, so callers cannot authorize one path and pass another path to the handler:
+
+~~~python
+from aegisforge.authority import AuthorityKernel, DEFAULT_CAPABILITIES
+from aegisforge.autonomy import run_audit_mission
+
+kernel = AuthorityKernel.from_policy_file(
+    DEFAULT_CAPABILITIES,
+    "authority-policy.json",
+    audit_path=".aegisforge/authority.jsonl",
+)
+preview = run_audit_mission(
+    "./my-project",
+    authority=kernel,
+    subject="authenticated-user-id",  # supplied by the authenticated host
+)
+~~~
+
+For a repair, the host must first authenticate the approver and obtain explicit consent. It then issues an approval for the exact target scope and passes the short-lived token to a separate mission call:
+
+~~~python
+from pathlib import Path
+
+target = Path("./my-project").expanduser().resolve()
+resource = f"project:{target.as_posix()}"
+token = kernel.issue_approval(
+    subject="authenticated-user-id",
+    capability="project.repair",
+    resource=resource,
+    approver="authenticated-approver-id",
+)
+result = run_audit_mission(
+    target,
+    apply_supported_repairs=True,
+    authority=kernel,
+    subject="authenticated-user-id",
+    approval_token=token,
+)
+~~~
+
+A token is single-use and must be newly issued after a fresh approval. The host remains responsible for authentication, policy-file protection, and presenting the proposed diff to the approver. The legacy CLI mission mode remains available for local workflows; it does not authenticate users and is not a substitute for the host-integrated Authority Kernel path.
+
+Example policy file:
+
+~~~json
+{
+  "version": 1,
+  "grants": [
+    {
+      "subject": "operator",
+      "capability": "project.inspect",
+      "resource": "project:/absolute/path/to/my-project",
+      "expires_at": "2030-01-01T00:00:00Z"
+    }
+  ]
+}
+~~~
+
+The capability vocabulary is `project.inspect`, `project.repair`, `service.inspect`, `service.restart`, `device.inspect`, and `device.control`. This release includes only an in-memory simulator for service inspection/restart and simulated device-mode changes. It does not ship live service/device connectors or arbitrary command execution.
+
+Run the interactive local simulator with `aegisforge-sim-demo` after installation, or `python examples/simulation_demo.py` from a source checkout. It demonstrates the read path and asks for a separate confirmation before each simulated mutation. Its fixed subject/approver labels are demo placeholders, not authentication; a real host must authenticate both identities before issuing an approval token. The demo writes its decision ledger to `.aegisforge/simulation-audit.jsonl`.
+
+Python integrations can route a registered local tool through `ToolRegistry.call_authorized`, which checks the tool's declared capability and mutation classification before invoking its handler. The legacy `ToolRegistry.call()` method is read-only; its old `approve_mutation` boolean no longer grants write access, and mutation calls are rejected unless they use the authority-gated method. That path snapshots supported input containers before scope resolution and passes the same immutable snapshot to the handler, preventing caller-side list/dictionary changes between authorization and execution. Capabilities marked as mutating need an active grant plus a short-lived, exact-scope, single-use approval token. The host must authenticate the caller identity and the approver, protect the policy file from untrusted writes, and obtain explicit human consent before calling the Python API's `issue_approval` method. The kernel and CLI do not authenticate identities; the CLI's `--subject` value is only an asserted label for policy evaluation. `issue_approval` is not an authentication system and must never be exposed directly to unauthenticated clients. The CLI check intentionally cannot manufacture or pass mutation approvals, so it denies mutating checks with `approval_required`.
+
+When an audit path is configured (and always for the CLI), approvals and authorization decisions append to a local JSONL hash chain. Authorized adapter and local-tool invocations also append an execution_started event before the handler and a linked execution_result event afterward, with succeeded/failed/timed_out outcome, elapsed milliseconds, and exception class only (not raw output or exception text). Python callers that omit an audit path retain events only in process memory; production hosts should configure a persistent path. Detected edits, reordering, truncation after the process has loaded the log, oversized files (over 16 MiB), append attempts that would exceed the cap, or write failures block authorization or the next execution phase. A handler that raises may have performed partial side effects. A start without a result means the operation's final outcome is unknown; hosts can list these records with `AuthorityKernel.pending_executions()` and must reconcile the target before retrying. If the final result cannot be recorded, the authorized caller receives a reconciliation error rather than a normal success response. The hash chain is tamper-evident, not tamper-proof against a privileged attacker who can rewrite the entire log. Use one process per audit log. The CLI returns exit code 0 for allow, 1 for deny, and 2 for an operational or policy error.
+
 
 ## Safety model
 
@@ -78,10 +157,11 @@ A scan returns exit code 1 when a finding meets the selected --fail-on threshold
 - Symlinks are rejected; individual-file, aggregate-byte, file-count, directory-count and entry-count limits bound scanning.
 - Browser uploads are accepted only by the loopback server and are never forwarded to another service.
 - The local tool registry exposes only explicit built-in tools; mutating calls require explicit approval.
+- The authority kernel defaults to deny, matches exact resource scopes, requires expiring grants, and requires a one-time human approval token for mutating capability decisions.
 - Evidence is redacted before it enters reports.
 - A clean report is not a security certification. Validate findings in context.
 
-See [SECURITY.md](SECURITY.md), [DESIGN.md](DESIGN.md), and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [SECURITY.md](SECURITY.md), [DESIGN.md](DESIGN.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the [adapter engineering contract](docs/ADAPTERS.md).
 
 ## Development
 
@@ -95,7 +175,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13; it also
 
 ## Roadmap
 
-Next: extend data-flow analysis across more language constructs and frameworks, then strengthen isolated engineering missions. AegisForge is not a general autonomous intelligence or a universal system controller.
+The adapter boundary and an in-memory simulator are now included. Adapter calls accept bounded JSON-only arguments (deeply frozen before validation, scope resolution and handler execution); adapter handlers and operation declarations are snapshotted at registration. The simulator offers status inspection, simulated service restart, and simulated mode changes, with separate capabilities and one-time approval for state changes. It has no operating-system, network, live-service, or physical-device access. Next: build one narrowly scoped, real integration behind that boundary only after its authentication, resource identity, failure modes, and rollback behavior are independently reviewed and tested. AegisForge is not a general autonomous intelligence or a universal system controller.
 
 ## License
 

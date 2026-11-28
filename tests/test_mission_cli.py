@@ -18,6 +18,9 @@ class MissionCLITests(unittest.TestCase):
         self.assertIn("scan_project",by_name)
         self.assertFalse(by_name["scan_project"]["mutates"])
         self.assertTrue(by_name["apply_supported_repairs"]["mutates"])
+        self.assertEqual(by_name["scan_project"]["capability"], "project.inspect")
+        self.assertTrue(by_name["scan_project"]["scope_bound"])
+        self.assertEqual(by_name["apply_supported_repairs"]["capability"], "project.repair")
 
     def test_mission_preview_does_not_modify_files(self):
         with tempfile.TemporaryDirectory() as temp:

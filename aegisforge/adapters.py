@@ -101,7 +101,7 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         if value is None or type(value) is bool:
             return value
         if type(value) is int:
-            if value.bit_length() > 63:
+            if value < -(1 << 63) or value > (1 << 63) - 1:
                 raise ValueError("integer arguments must fit in a signed 64-bit value")
             budget["bytes"] += len(str(value))
             return value

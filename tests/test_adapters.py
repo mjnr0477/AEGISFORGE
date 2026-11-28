@@ -3,9 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
+from unittest.mock import patch
 
 from aegisforge.adapters import (
     AdapterApprovalRequired,
+    AdapterExecutionAuditError,
     AdapterError,
     AdapterNotFound,
     AdapterPermissionDenied,
@@ -42,6 +44,16 @@ class AdapterRegistryTests(unittest.TestCase):
         )
         self.assertEqual(status["mode"], "normal")
         self.assertTrue(status["simulated"])
+        events = [entry["event"] for entry in self.kernel.audit_entries()]
+        self.assertEqual(
+            [event["type"] for event in events],
+            ["authorization_decision", "execution_started", "execution_result"],
+        )
+        self.assertEqual(events[-1]["outcome"], "succeeded")
+        self.assertEqual(events[-1]["operation"], "inspect_status")
+        self.assertEqual(events[-1]["authorization_sequence"], 1)
+        self.assertEqual(events[-1]["start_sequence"], 2)
+        self.assertGreaterEqual(events[-1]["duration_ms"], 0)
 
     def test_mutation_requires_one_time_approval_and_changes_only_simulated_state(self):
         with self.assertRaises(AdapterApprovalRequired):
@@ -63,6 +75,73 @@ class AdapterRegistryTests(unittest.TestCase):
                 adapter_id="simulation", operation_name="set_mode",
                 subject="operator", arguments={"mode": "normal"}, approval_token=token,
             )
+
+    def test_handler_failure_is_recorded_without_leaking_error_message(self):
+        registry = AdapterRegistry(self.kernel)
+        spec = AdapterSpec(
+            "failure-test", "handler failure audit",
+            {"inspect": OperationSpec("inspect", "service.inspect", False,
+                                      lambda arguments: None)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+
+        def fail(arguments):
+            del arguments
+            raise RuntimeError("sensitive-token-value")
+
+        registry.register(spec, {"inspect": fail})
+        with self.assertRaisesRegex(RuntimeError, "sensitive-token-value"):
+            registry.invoke(
+                adapter_id="failure-test", operation_name="inspect",
+                subject="operator", arguments={},
+            )
+        events = [entry["event"] for entry in self.kernel.audit_entries()]
+        self.assertEqual(events[-1]["type"], "execution_result")
+        self.assertEqual(events[-1]["outcome"], "failed")
+        self.assertEqual(events[-1]["error_type"], "RuntimeError")
+        self.assertNotIn("sensitive-token-value", str(events))
+
+    def test_execution_start_audit_failure_prevents_handler_invocation(self):
+        calls = []
+        registry = AdapterRegistry(self.kernel)
+        spec = AdapterSpec(
+            "start-audit-failure", "start audit failure",
+            {"inspect": OperationSpec("inspect", "service.inspect", False,
+                                      lambda arguments: None)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+        registry.register(spec, {"inspect": lambda arguments: calls.append(arguments)})
+        with patch.object(
+            self.kernel, "record_execution_started",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+                registry.invoke(
+                    adapter_id="start-audit-failure", operation_name="inspect",
+                    subject="operator", arguments={},
+                )
+        self.assertEqual(calls, [])
+
+    def test_result_audit_failure_warns_that_handler_may_have_completed(self):
+        token = self.kernel.issue_approval(
+            subject="operator", capability="device.control",
+            resource="simulation:demo-service", approver="authenticated-owner",
+        )
+        with patch.object(
+            self.kernel, "record_execution_result",
+            side_effect=RuntimeError("ledger unavailable"),
+        ):
+            with self.assertRaisesRegex(AdapterExecutionAuditError, "reconcile before retrying"):
+                self.registry.invoke(
+                    adapter_id="simulation", operation_name="set_mode",
+                    subject="operator", arguments={"mode": "maintenance"},
+                    approval_token=token,
+                )
+        status = self.registry.invoke(
+            adapter_id="simulation", operation_name="inspect_status",
+            subject="operator", arguments={},
+        )
+        self.assertEqual(status["mode"], "maintenance")
 
     def test_unknown_adapter_and_operation_are_rejected(self):
         with self.assertRaises(AdapterNotFound):

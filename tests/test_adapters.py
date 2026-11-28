@@ -101,6 +101,32 @@ class AdapterRegistryTests(unittest.TestCase):
         self.assertEqual(events[-1]["error_type"], "RuntimeError")
         self.assertNotIn("sensitive-token-value", str(events))
 
+    def test_handler_timeout_is_recorded_as_distinct_outcome(self):
+        registry = AdapterRegistry(self.kernel)
+        spec = AdapterSpec(
+            "timeout-test", "handler timeout audit",
+            {"inspect": OperationSpec("inspect", "service.inspect", False,
+                                      lambda arguments: None)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+
+        def timeout(arguments):
+            del arguments
+            raise TimeoutError("remote operation may still be running")
+
+        registry.register(spec, {"inspect": timeout})
+        with self.assertRaises(TimeoutError):
+            registry.invoke(
+                adapter_id="timeout-test", operation_name="inspect",
+                subject="operator", arguments={},
+            )
+        result_event = [
+            entry["event"] for entry in self.kernel.audit_entries()
+            if entry["event"]["type"] == "execution_result"
+        ][-1]
+        self.assertEqual(result_event["outcome"], "timed_out")
+        self.assertEqual(result_event["error_type"], "TimeoutError")
+
     def test_execution_start_audit_failure_prevents_handler_invocation(self):
         calls = []
         registry = AdapterRegistry(self.kernel)

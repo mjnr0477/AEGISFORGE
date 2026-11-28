@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 aegisforge = "aegisforge.cli:main"
+aegisforge-sim-demo = "aegisforge.simulation_demo:main"
 
 [tool.setuptools.packages.find]
 include = ["aegisforge*"]

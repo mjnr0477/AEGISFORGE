@@ -163,6 +163,10 @@ class AdapterRegistryTests(unittest.TestCase):
                     subject="operator", arguments={"mode": "maintenance"},
                     approval_token=token,
                 )
+        unresolved = self.kernel.pending_executions()
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0]["operation"], "set_mode")
+        self.assertEqual(unresolved[0]["status"], "outcome_unknown")
         status = self.registry.invoke(
             adapter_id="simulation", operation_name="inspect_status",
             subject="operator", arguments={},

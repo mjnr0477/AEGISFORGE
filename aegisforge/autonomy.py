@@ -19,7 +19,12 @@ from .scanner import scan_directory
 TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
 class ToolPermissionError(PermissionError):
-    """Raised when a mutating tool is invoked without explicit approval."""
+    """Raised when a tool call is denied by an explicit permission boundary."""
+
+
+class ToolApprovalRequired(ToolPermissionError):
+    """Raised when a mutating operation has a grant but lacks its one-time approval."""
+
 
 @dataclass(frozen=True, slots=True)
 class ActionTool:
@@ -28,6 +33,7 @@ class ActionTool:
     handler: Callable[..., Any]
     mutates: bool = False
     capability: str | None = None
+    scope_resolver: Callable[..., str] | None = None
 
 class ToolRegistry:
     """Small explicit registry; it never imports or discovers tools dynamically."""
@@ -50,6 +56,8 @@ class ToolRegistry:
             not isinstance(tool.capability, str) or not CAPABILITY_RE.fullmatch(tool.capability)
         ):
             raise ValueError("tool capability must be a dotted lowercase identifier")
+        if tool.scope_resolver is not None and not callable(tool.scope_resolver):
+            raise ValueError("tool scope_resolver must be callable")
         if tool.name in self._tools:
             raise ValueError(f"tool is already registered: {tool.name}")
         self._tools[tool.name] = tool
@@ -71,14 +79,14 @@ class ToolRegistry:
         *args: Any,
         authority: AuthorityKernel,
         subject: str,
-        resource: str,
         approval_token: str | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Authorize immediately before invoking a registered tool handler.
+        """Resolve the target scope and authorize immediately before invocation.
 
-        Tools used through this path must declare a capability whose mutating
-        classification matches the tool's own mutates flag.
+        The resource is derived from the handler arguments, never trusted from
+        a separate caller-supplied string. Tools used here must declare a scope
+        resolver and a capability whose mutation classification matches.
         """
         try:
             tool = self._tools[name]
@@ -86,6 +94,16 @@ class ToolRegistry:
             raise KeyError(f"unknown local tool: {name}") from exc
         if tool.capability is None:
             raise ToolPermissionError(f"tool '{name}' has no authority capability mapping")
+        if tool.scope_resolver is None:
+            raise ToolPermissionError(f"tool '{name}' has no resource scope resolver")
+        resource = tool.scope_resolver(*args, **kwargs)
+        if (
+            not isinstance(resource, str)
+            or not resource.strip()
+            or len(resource) > 1024
+            or any(ord(char) < 32 or ord(char) == 127 for char in resource)
+        ):
+            raise ToolPermissionError(f"tool '{name}' resolved an invalid resource scope")
         expected_mutation = authority.capability_is_mutating(tool.capability)
         if expected_mutation is None or expected_mutation != tool.mutates:
             raise ToolPermissionError(
@@ -98,9 +116,10 @@ class ToolRegistry:
             approval_token=approval_token,
         )
         if not decision.allowed:
-            raise ToolPermissionError(
-                f"authority denied tool '{name}': {decision.reason}"
-            )
+            message = f"authority denied tool '{name}': {decision.reason}"
+            if decision.reason == "approval_required":
+                raise ToolApprovalRequired(message)
+            raise ToolPermissionError(message)
         return tool.handler(*args, **kwargs)
 
     def describe(self) -> list[dict[str, Any]]:
@@ -109,6 +128,12 @@ class ToolRegistry:
             {"name": item.name, "description": item.description, "mutates": item.mutates}
             for item in sorted(self._tools.values(), key=lambda item: item.name)
         ]
+
+def _project_resource(target: str | Path, *_args: Any, **_kwargs: Any) -> str:
+    """Bind a local project capability to the canonical target directory."""
+    root = Path(target).expanduser().resolve()
+    return f"project:{root.as_posix()}"
+
 
 def create_local_registry() -> ToolRegistry:
     """Create the built-in, offline tool set."""
@@ -119,6 +144,7 @@ def create_local_registry() -> ToolRegistry:
         scan_directory,
         mutates=False,
         capability="project.inspect",
+        scope_resolver=_project_resource,
     ))
     registry.register(ActionTool(
         "map_project",
@@ -126,6 +152,7 @@ def create_local_registry() -> ToolRegistry:
         build_project_map,
         mutates=False,
         capability="project.inspect",
+        scope_resolver=_project_resource,
     ))
     registry.register(ActionTool(
         "propose_repairs",
@@ -133,6 +160,7 @@ def create_local_registry() -> ToolRegistry:
         propose_repairs,
         mutates=False,
         capability="project.inspect",
+        scope_resolver=_project_resource,
     ))
     registry.register(ActionTool(
         "apply_supported_repairs",
@@ -140,6 +168,7 @@ def create_local_registry() -> ToolRegistry:
         apply_repairs,
         mutates=True,
         capability="project.repair",
+        scope_resolver=_project_resource,
     ))
     return registry
 
@@ -212,17 +241,49 @@ def run_audit_mission(
     apply_supported_repairs: bool = False,
     backup_dir: str | Path | None = None,
     registry: ToolRegistry | None = None,
+    authority: AuthorityKernel | None = None,
+    subject: str | None = None,
+    approval_token: str | None = None,
 ) -> MissionResult:
-    """Run an audit plan. Mutating tools are unreachable unless explicitly approved."""
+    """Run an audit plan, optionally enforcing the Authority Kernel at each tool call.
+
+    When authority is supplied, every operation is authorized against a resource
+    scope derived from its actual target argument. Mutating repairs additionally
+    require an exact-scope one-time approval token. Without authority, the
+    historical explicit CLI approval workflow remains available for compatibility.
+    """
+    if authority is not None:
+        if not isinstance(subject, str) or not subject.strip():
+            raise ValueError("an authenticated subject from the host is required with authority")
+    elif subject is not None or approval_token is not None:
+        raise ValueError("subject and approval_token require an AuthorityKernel")
+
     tools = registry or create_local_registry()
     root = Path(target).expanduser().resolve()
+
+    def invoke_tool(name: str, *args: Any, approval: str | None = None, **kwargs: Any) -> Any:
+        if authority is None:
+            return tools.call(
+                name,
+                *args,
+                approve_mutation=(name == "apply_supported_repairs" and apply_supported_repairs),
+                **kwargs,
+            )
+        return tools.call_authorized(
+            name,
+            *args,
+            authority=authority,
+            subject=subject,
+            approval_token=approval,
+            **kwargs,
+        )
     result = MissionResult(target=str(root), status="running")
     result.steps.append(MissionStep(
         "map_project", "running",
         "Build a structural index of Python files without importing or executing source.",
     ))
     try:
-        result.project_map = tools.call("map_project", root)
+        result.project_map = invoke_tool("map_project", root)
         result.steps[-1] = MissionStep(
             "map_project",
             "incomplete" if result.project_map.warnings else "completed",
@@ -243,7 +304,7 @@ def run_audit_mission(
         "scan_project", "running", "Inspect supported files without executing project code."
     ))
     try:
-        initial = tools.call("scan_project", root)
+        initial = invoke_tool("scan_project", root)
         result.initial_scan = initial
         result.steps[-1] = MissionStep(
             "scan_project",
@@ -272,7 +333,7 @@ def run_audit_mission(
         "Prepare only built-in deterministic repairs; do not change project files.",
     ))
     try:
-        result.proposed_repairs = tools.call("propose_repairs", root)
+        result.proposed_repairs = invoke_tool("propose_repairs", root)
         result.steps[-1] = MissionStep(
             "propose_repairs", "completed",
             f"Prepared {len(result.proposed_repairs)} supported repair proposal(s).",
@@ -304,27 +365,37 @@ def run_audit_mission(
         mutates=True,
     ))
     try:
-        result.backups = tools.call(
+        result.backups = invoke_tool(
             "apply_supported_repairs",
             root,
             result.proposed_repairs,
             backup_dir,
-            approve_mutation=True,
+            approval=approval_token,
         )
         result.steps[-1] = MissionStep(
             "apply_supported_repairs", "completed",
             f"Applied and internally verified {len(result.backups)} file change(s).",
             mutates=True,
         )
+    except ToolApprovalRequired as exc:
+        result.errors.append(str(exc))
+        result.steps[-1] = MissionStep(
+            "apply_supported_repairs", "pending_approval",
+            "The project repair grant is present, but a fresh one-time approval is required; no files were changed.",
+            mutates=True,
+        )
+        result.final_scan = initial
+        result.status = "approval_required"
+        return result
     except (OSError, ValueError, RuntimeError) as exc:
         result.errors.append(str(exc))
         result.steps[-1] = MissionStep(
             "apply_supported_repairs", "failed",
-            "The repair operation failed; built-in repair logic attempts to restore backed-up originals.",
+            "The repair operation failed or was denied; no unsupported operation is attempted.",
             mutates=True,
         )
         try:
-            result.final_scan = tools.call("scan_project", root)
+            result.final_scan = invoke_tool("scan_project", root)
         except (OSError, ValueError, RuntimeError) as scan_exc:
             result.errors.append(f"Post-failure scan could not run: {scan_exc}")
         result.status = "failed"
@@ -335,7 +406,7 @@ def run_audit_mission(
         "Run a fresh scan after the repair operation.",
     ))
     try:
-        result.final_scan = tools.call("scan_project", root)
+        result.final_scan = invoke_tool("scan_project", root)
         if result.final_scan.errors:
             result.errors.extend(result.final_scan.errors)
             result.steps[-1] = MissionStep(

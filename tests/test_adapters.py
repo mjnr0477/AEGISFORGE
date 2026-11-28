@@ -75,6 +75,41 @@ class AdapterRegistryTests(unittest.TestCase):
             self.registry.invoke(adapter_id="simulation", operation_name="inspect_status",
                                  subject="guest", arguments={})
 
+    def test_resource_scope_is_derived_from_actual_operation_arguments(self):
+        kernel = AuthorityKernel(
+            [CapabilitySpec("service.inspect", "Inspect tenant service")],
+            [Grant("operator", "service.inspect", "tenant:alpha",
+                   self.now + timedelta(hours=1))],
+            clock=lambda: self.now,
+        )
+        registry = AdapterRegistry(kernel)
+        spec = AdapterSpec(
+            "tenant-adapter", "scoped tenant test",
+            {"inspect": OperationSpec("inspect", "service.inspect", False,
+                                      lambda args: None)},
+            lambda operation, args: f"tenant:{args['tenant_id']}",
+        )
+        registry.register(spec, {"inspect": lambda args: args["tenant_id"]})
+        with self.assertRaises(AdapterPermissionDenied):
+            registry.invoke(adapter_id="tenant-adapter", operation_name="inspect",
+                            subject="operator", arguments={"tenant_id": "beta"})
+        self.assertEqual(
+            registry.invoke(adapter_id="tenant-adapter", operation_name="inspect",
+                            subject="operator", arguments={"tenant_id": "alpha"}),
+            "alpha",
+        )
+
+    def test_unknown_capabilities_are_rejected_at_registration(self):
+        registry = AdapterRegistry(self.kernel)
+        spec = AdapterSpec(
+            "unknown-capability", "test",
+            {"inspect": OperationSpec("inspect", "service.delete", False,
+                                      lambda args: None)},
+            lambda operation, args: "simulation:demo-service",
+        )
+        with self.assertRaisesRegex(ValueError, "unknown capability"):
+            registry.register(spec, {"inspect": lambda args: None})
+
     def test_mutation_classification_must_match_kernel(self):
         spec = AdapterSpec(
             "wrong-classification", "test",

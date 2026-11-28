@@ -168,6 +168,13 @@ class AuthorityKernelTests(unittest.TestCase):
             outcome="succeeded",
             duration_ms=12,
         )
+        with self.assertRaisesRegex(AuthorityError, "already started an execution"):
+            kernel.record_execution_started(
+                decision=allowed,
+                execution_id="execution-allowed-duplicate",
+                adapter_id="demo-adapter",
+                operation="inspect",
+            )
         self.assertGreater(result_sequence, start_sequence)
         events = [entry["event"] for entry in kernel.audit_entries()]
         self.assertEqual(events[-2]["type"], "execution_started")
@@ -180,6 +187,34 @@ class AuthorityKernelTests(unittest.TestCase):
                 outcome="succeeded",
                 duration_ms=13,
             )
+
+    def test_execution_lifecycle_persists_in_hash_chained_ledger(self):
+        with tempfile.TemporaryDirectory() as folder:
+            audit_path = Path(folder) / "authority.jsonl"
+            kernel = self.make_kernel(audit_path=audit_path)
+            decision = kernel.authorize(
+                subject="operator", capability="project.inspect",
+                resource="project:/repo-a",
+            )
+            start_sequence = kernel.record_execution_started(
+                decision=decision,
+                execution_id="execution-persist-0001",
+                adapter_id="demo-adapter",
+                operation="inspect",
+            )
+            kernel.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id="execution-persist-0001",
+                outcome="succeeded",
+                duration_ms=8,
+            )
+            reloaded = self.make_kernel(audit_path=audit_path)
+            events = [entry["event"] for entry in reloaded.audit_entries()]
+            self.assertEqual(
+                [event["type"] for event in events],
+                ["authorization_decision", "execution_started", "execution_result"],
+            )
+            self.assertEqual(events[-1]["outcome"], "succeeded")
 
     def test_execution_result_must_match_existing_start_event(self):
         kernel = self.make_kernel()

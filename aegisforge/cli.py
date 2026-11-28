@@ -253,7 +253,7 @@ def _run_authority_audit(args: argparse.Namespace) -> int:
             "pending_count": len(pending),
             "pending_executions": pending,
         }
-        sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\\n")
+        sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
         return 0
 
     print("Authority audit ledger: VERIFIED")

@@ -12,7 +12,7 @@ Please do not publish secrets, personal data, or exploitable details in a public
 
 ## Scope and limitations
 
-A finding is a signal for human validation, not proof of exploitability. A clean scan is not a security certification. The scanner reads source files; it does not import or execute scanned code. It does not attempt to access accounts, bypass authentication, compromise third-party systems, or perform unauthorized transactions.
+A finding is a signal for human validation, not proof of exploitability. A clean scan is not a security certification. The scanner reads source files; it does not import or execute scanned code. On platforms with descriptor-relative file access, rooted reads open each path component beneath a pinned scan-root descriptor with no-follow flags, preventing a directory swapped for a symlink after enumeration from redirecting the read. Other platforms use best-effort inode checks and no-follow final-file opens where available. It does not attempt to access accounts, bypass authentication, compromise third-party systems, or perform unauthorized transactions.
 
 The Authority Kernel is default-deny and matches exact subjects, capabilities, resources, and expiries. It does not authenticate users or approvers. Applications must authenticate both identities, protect policy files, show the intended operation, and obtain explicit consent before issuing a one-time mutation token. Tokens expire within 15 minutes; pending token storage is bounded to 4,096 entries per kernel and expired entries are cleaned up during issuance/authorization activity. Never expose the approval-issuance method directly to an unauthenticated client.
 

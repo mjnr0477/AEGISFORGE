@@ -298,6 +298,11 @@ class SimulationAdapter:
             raise AttributeError("simulation resource identity is immutable")
         object.__setattr__(self, name, value)
 
+    def __delattr__(self, name: str) -> None:
+        if name == "_resource_id":
+            raise AttributeError("simulation resource identity is immutable")
+        object.__delattr__(self, name)
+
     @property
     def resource_id(self) -> str:
         return self._resource_id

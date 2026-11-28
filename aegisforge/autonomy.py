@@ -5,11 +5,12 @@ explicitly registered, local-only, and mutating actions require caller approval.
 """
 from __future__ import annotations
 
+import math
 import re
 import secrets
 import time
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
+from pathlib import Path, PurePath
 from typing import Any, Callable
 
 from .authority import CAPABILITY_RE, AuthorityKernel
@@ -40,6 +41,81 @@ class ActionTool:
     mutates: bool = False
     capability: str | None = None
     scope_resolver: Callable[..., str] | None = None
+
+def _freeze_tool_value(value: Any, *, depth: int, budget: dict[str, int]) -> Any:
+    """Snapshot supported tool inputs so scope checks and handlers see one value.
+
+    Mutable containers are copied into immutable equivalents. Frozen dataclasses
+    are accepted only when all of their fields are themselves safely immutable.
+    Arbitrary application objects are rejected rather than trusting deepcopy hooks.
+    """
+    budget["nodes"] += 1
+    if budget["nodes"] > 50_000:
+        raise ToolPermissionError("authorized tool arguments contain too many values")
+    if depth > 32:
+        raise ToolPermissionError("authorized tool arguments are nested too deeply")
+    if value is None or type(value) in (bool, int, str, bytes):
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ToolPermissionError("authorized tool arguments must not contain non-finite numbers")
+        return value
+    if isinstance(value, PurePath):
+        return value
+    if type(value) in (list, tuple):
+        frozen_items = tuple(
+            _freeze_tool_value(item, depth=depth + 1, budget=budget)
+            for item in value
+        )
+        if type(value) is tuple and all(
+            frozen is original for frozen, original in zip(frozen_items, value)
+        ):
+            return value
+        return frozen_items
+    if type(value) is dict:
+        if len(value) > 4096:
+            raise ToolPermissionError("authorized tool argument objects may contain at most 4096 keys")
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ToolPermissionError("authorized tool argument object keys must be strings")
+            frozen[key] = _freeze_tool_value(item, depth=depth + 1, budget=budget)
+        return MappingProxyType(frozen)
+    if is_dataclass(value) and not isinstance(value, type):
+        params = getattr(type(value), "__dataclass_params__", None)
+        if params is None or not params.frozen:
+            raise ToolPermissionError(
+                f"authorized tool arguments do not accept mutable dataclass {type(value).__name__}"
+            )
+        changes: dict[str, Any] = {}
+        for item in fields(value):
+            original = getattr(value, item.name)
+            frozen = _freeze_tool_value(original, depth=depth + 1, budget=budget)
+            if frozen is not original:
+                changes[item.name] = frozen
+        if not changes:
+            return value
+        try:
+            return replace(value, **changes)
+        except (TypeError, ValueError) as exc:
+            raise ToolPermissionError(
+                f"could not safely snapshot dataclass {type(value).__name__}"
+            ) from exc
+    raise ToolPermissionError(
+        f"authorized tool arguments do not support mutable value type {type(value).__name__}"
+    )
+
+
+def _freeze_tool_arguments(
+    args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
+    budget = {"nodes": 0}
+    safe_args = tuple(
+        _freeze_tool_value(value, depth=0, budget=budget) for value in args
+    )
+    safe_kwargs = _freeze_tool_value(kwargs, depth=0, budget=budget)
+    return safe_args, safe_kwargs
+
 
 class ToolRegistry:
     """Small explicit registry; it never imports or discovers tools dynamically."""
@@ -110,7 +186,8 @@ class ToolRegistry:
             raise ToolPermissionError(f"tool '{name}' has no authority capability mapping")
         if tool.scope_resolver is None:
             raise ToolPermissionError(f"tool '{name}' has no resource scope resolver")
-        resource = tool.scope_resolver(*args, **kwargs)
+        safe_args, safe_kwargs = _freeze_tool_arguments(args, kwargs)
+        resource = tool.scope_resolver(*safe_args, **safe_kwargs)
         if (
             not isinstance(resource, str)
             or not resource.strip()
@@ -144,7 +221,7 @@ class ToolRegistry:
         )
         started_ns = time.monotonic_ns()
         try:
-            result = tool.handler(*args, **kwargs)
+            result = tool.handler(*safe_args, **safe_kwargs)
         except Exception as handler_error:
             duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
             try:

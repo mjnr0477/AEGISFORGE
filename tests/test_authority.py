@@ -188,6 +188,32 @@ class AuthorityKernelTests(unittest.TestCase):
                 duration_ms=13,
             )
 
+    def test_pending_executions_lists_unresolved_start_until_timed_out_result(self):
+        kernel = self.make_kernel()
+        decision = kernel.authorize(
+            subject="operator", capability="project.inspect", resource="project:/repo-a"
+        )
+        start_sequence = kernel.record_execution_started(
+            decision=decision,
+            execution_id="execution-pending-0001",
+            adapter_id="demo-adapter",
+            operation="inspect",
+        )
+        pending = kernel.pending_executions()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["status"], "outcome_unknown")
+        self.assertEqual(pending[0]["start_sequence"], start_sequence)
+        self.assertEqual(pending[0]["resource"], "project:/repo-a")
+
+        kernel.record_execution_result(
+            start_sequence=start_sequence,
+            execution_id="execution-pending-0001",
+            outcome="timed_out",
+            duration_ms=1500,
+            error_type="TimeoutError",
+        )
+        self.assertEqual(kernel.pending_executions(), [])
+
     def test_execution_lifecycle_persists_in_hash_chained_ledger(self):
         with tempfile.TemporaryDirectory() as folder:
             audit_path = Path(folder) / "authority.jsonl"

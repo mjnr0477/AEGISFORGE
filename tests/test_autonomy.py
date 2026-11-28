@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from aegisforge.authority import AuthorityKernel, CapabilitySpec, Grant, DEFAULT_CAPABILITIES
 from aegisforge.autonomy import (
     ActionTool,
+    ToolExecutionAuditError,
     ToolPermissionError,
     ToolRegistry,
     create_local_registry,
@@ -85,6 +86,90 @@ class ToolRegistryTests(unittest.TestCase):
                 "repair_project", "/repo", authority=authority,
                 subject="operator", approval_token=token,
             )
+
+    def test_authorized_tool_execution_records_success_and_handler_failure(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "inspect_ok", "Successful read", lambda: "ready",
+            capability="project.inspect", scope_resolver=lambda: "project:/repo",
+        ))
+
+        def fail():
+            raise RuntimeError("secret-bearing exception text")
+
+        registry.register(ActionTool(
+            "inspect_fail", "Failed read", fail,
+            capability="project.inspect", scope_resolver=lambda: "project:/repo",
+        ))
+        self.assertEqual(
+            registry.call_authorized("inspect_ok", authority=authority, subject="operator"),
+            "ready",
+        )
+        with self.assertRaisesRegex(RuntimeError, "secret-bearing exception text"):
+            registry.call_authorized("inspect_fail", authority=authority, subject="operator")
+        events = [entry["event"] for entry in authority.audit_entries()]
+        results = [event for event in events if event["type"] == "execution_result"]
+        self.assertEqual([event["outcome"] for event in results], ["succeeded", "failed"])
+        self.assertEqual(results[-1]["error_type"], "RuntimeError")
+        self.assertNotIn("secret-bearing exception text", str(events))
+        starts = [event for event in events if event["type"] == "execution_started"]
+        self.assertEqual(len(starts), 2)
+        self.assertTrue(all(event["adapter_id"] == "local-tool-registry" for event in starts))
+
+    def test_local_tool_start_audit_failure_prevents_handler(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        calls = []
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "inspect_project", "Read project", lambda: calls.append("called"),
+            capability="project.inspect", scope_resolver=lambda: "project:/repo",
+        ))
+        with patch.object(
+            authority, "record_execution_started",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+                registry.call_authorized(
+                    "inspect_project", authority=authority, subject="operator"
+                )
+        self.assertEqual(calls, [])
+
+    def test_local_tool_result_audit_failure_requires_reconciliation(self):
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.repair", "Repair project", mutates=True)],
+            [Grant("operator", "project.repair", "project:/repo", now + timedelta(minutes=5))],
+        )
+        changes = []
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "repair_project", "Change project", lambda: changes.append("changed"),
+            mutates=True, capability="project.repair",
+            scope_resolver=lambda: "project:/repo",
+        ))
+        token = authority.issue_approval(
+            subject="operator", capability="project.repair",
+            resource="project:/repo", approver="owner",
+        )
+        with patch.object(
+            authority, "record_execution_result",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(ToolExecutionAuditError, "reconcile before retrying"):
+                registry.call_authorized(
+                    "repair_project", authority=authority, subject="operator",
+                    approval_token=token,
+                )
+        self.assertEqual(changes, ["changed"])
 
     def test_authorized_call_rejects_tool_capability_mutation_mismatch(self):
         authority = AuthorityKernel([CapabilitySpec("project.inspect", "Read-only")])

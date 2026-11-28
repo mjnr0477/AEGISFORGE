@@ -35,7 +35,7 @@ class ToolRegistryTests(unittest.TestCase):
         )
         registry = ToolRegistry()
         registry.register(ActionTool(
-            "inspect_project", "Read-only example", lambda value: value.upper(),
+            "inspect_project", "Read-only example", lambda value: "READY",
             mutates=False, capability="project.inspect",
             scope_resolver=lambda value: f"project:{Path(value).resolve().as_posix()}",
         ))
@@ -213,7 +213,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             source=root/"broken.py"
-            source.write_text("def broken(:\\n",encoding="utf-8")
+            source.write_text("def broken(:\n",encoding="utf-8")
             result=run_audit_mission(root)
             self.assertEqual(result.status,"incomplete")
             self.assertIsNotNone(result.project_map)
@@ -226,7 +226,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "settings.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             resource = f"project:{root.resolve().as_posix()}"
             now = datetime.now(timezone.utc)
             authority = AuthorityKernel(
@@ -235,7 +235,7 @@ class MissionRunnerTests(unittest.TestCase):
             )
             result = run_audit_mission(root, authority=authority, subject="operator")
             self.assertEqual(result.status, "approval_required")
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
             self.assertEqual(len(result.proposed_repairs), 1)
             self.assertTrue(all(
                 entry["event"]["resource"] == resource
@@ -247,7 +247,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "settings.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             resource = f"project:{root.resolve().as_posix()}"
             now = datetime.now(timezone.utc)
             authority = AuthorityKernel(
@@ -266,7 +266,7 @@ class MissionRunnerTests(unittest.TestCase):
                 subject="operator", approval_token=token,
             )
             self.assertEqual(result.status, "completed")
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=false\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=false\n")
             self.assertEqual(len(result.backups), 1)
             self.assertEqual(result.final_findings, [])
 
@@ -274,7 +274,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "settings.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             resource = f"project:{root.resolve().as_posix()}"
             now = datetime.now(timezone.utc)
             authority = AuthorityKernel(
@@ -289,14 +289,14 @@ class MissionRunnerTests(unittest.TestCase):
             )
             self.assertEqual(result.status, "approval_required")
             self.assertEqual(result.steps[-1].status, "pending_approval")
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
             self.assertIsNotNone(result.final_scan)
 
     def test_authorized_mission_denies_repair_without_repair_grant(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "settings.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             resource = f"project:{root.resolve().as_posix()}"
             now = datetime.now(timezone.utc)
             authority = AuthorityKernel(
@@ -307,7 +307,7 @@ class MissionRunnerTests(unittest.TestCase):
                 root, apply_supported_repairs=True, authority=authority, subject="operator"
             )
             self.assertEqual(result.status, "failed")
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
             self.assertIn("no_active_exact_scope_grant", " ".join(result.errors))
             self.assertIn("AF-CFG-001", {item.rule_id for item in result.manual_review_findings})
 
@@ -315,7 +315,7 @@ class MissionRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "settings.env"
-            source.write_text("DEBUG=true\\n", encoding="utf-8")
+            source.write_text("DEBUG=true\n", encoding="utf-8")
             now = datetime.now(timezone.utc)
             authority = AuthorityKernel(
                 DEFAULT_CAPABILITIES,
@@ -325,7 +325,7 @@ class MissionRunnerTests(unittest.TestCase):
             self.assertEqual(result.status, "failed")
             self.assertIsNone(result.initial_scan)
             self.assertIn("no_active_exact_scope_grant", " ".join(result.errors))
-            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\\n")
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
 
     def test_authorized_tool_requires_resource_scope_resolver(self):
         now = datetime.now(timezone.utc)

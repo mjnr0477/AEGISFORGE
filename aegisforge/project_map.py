@@ -181,7 +181,7 @@ def build_project_map(target: str | Path) -> ProjectMap:
             continue
         relative = path.relative_to(root).as_posix()
         try:
-            source = read_source_file(path)
+            source = read_source_file(path, root=root)
         except (OSError, ValueError) as exc:
             skipped += 1
             warnings.append(f"{relative}: {exc}")

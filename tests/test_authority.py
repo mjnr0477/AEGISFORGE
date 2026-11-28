@@ -1,8 +1,10 @@
 import json
+import stat
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from aegisforge.authority import (
@@ -333,6 +335,19 @@ class AuthorityKernelTests(unittest.TestCase):
                 kernel.audit_entries()
             with self.assertRaisesRegex(AuditLogIntegrityError, "audit log disappeared"):
                 kernel.pending_executions()
+
+    def test_audit_read_remains_bounded_when_file_grows_after_metadata_check(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "authority.jsonl"
+            with path.open("wb") as handle:
+                handle.truncate(MAX_AUDIT_LOG_BYTES + 1)
+
+            # Simulate a concurrent grow after metadata inspection: fstat reports
+            # a regular, zero-byte file while the subsequent read sees oversized data.
+            metadata = SimpleNamespace(st_mode=stat.S_IFREG, st_size=0)
+            with patch("aegisforge.authority.os.fstat", return_value=metadata):
+                with self.assertRaisesRegex(AuditLogIntegrityError, "safety limit"):
+                    self.make_kernel(audit_path=path)
 
     def test_oversized_audit_ledger_is_rejected_before_reading(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 import tempfile
 import unittest
@@ -356,6 +357,14 @@ class AuthorityKernelTests(unittest.TestCase):
                 handle.truncate(MAX_AUDIT_LOG_BYTES + 1)
 
             with self.assertRaisesRegex(AuditLogIntegrityError, "safety limit"):
+                self.make_kernel(audit_path=path)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "named pipes are unavailable")
+    def test_non_regular_audit_path_is_rejected_without_blocking(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audit.pipe"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(AuditLogIntegrityError, "regular file"):
                 self.make_kernel(audit_path=path)
 
     def test_append_refuses_to_exceed_audit_size_limit(self):

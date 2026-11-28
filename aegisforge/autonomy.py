@@ -179,12 +179,19 @@ class ToolRegistry:
         a separate caller-supplied string. Tools used here must declare a scope
         resolver and a capability whose mutation classification matches.
         """
+        if not isinstance(authority, AuthorityKernel):
+            raise TypeError("authority must be an AuthorityKernel")
         try:
             tool = self._tools[name]
         except KeyError as exc:
             raise KeyError(f"unknown local tool: {name}") from exc
         if tool.capability is None:
             raise ToolPermissionError(f"tool '{name}' has no authority capability mapping")
+        expected_mutation = authority.capability_is_mutating(tool.capability)
+        if expected_mutation is None or expected_mutation != tool.mutates:
+            raise ToolPermissionError(
+                f"tool '{name}' mutation classification does not match capability '{tool.capability}'"
+            )
         if tool.scope_resolver is None:
             raise ToolPermissionError(f"tool '{name}' has no resource scope resolver")
         safe_args, safe_kwargs = _freeze_tool_arguments(args, kwargs)
@@ -196,11 +203,6 @@ class ToolRegistry:
             or any(ord(char) < 32 or ord(char) == 127 for char in resource)
         ):
             raise ToolPermissionError(f"tool '{name}' resolved an invalid resource scope")
-        expected_mutation = authority.capability_is_mutating(tool.capability)
-        if expected_mutation is None or expected_mutation != tool.mutates:
-            raise ToolPermissionError(
-                f"tool '{name}' mutation classification does not match capability '{tool.capability}'"
-            )
         decision = authority.authorize(
             subject=subject,
             capability=tool.capability,

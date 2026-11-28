@@ -80,10 +80,12 @@ class AuthorityCLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "authority.jsonl"
             self._write_execution_ledger(path, complete=False)
+            ledger_before = path.read_bytes()
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = main(["authority", "audit", "--audit-log", str(path)])
             self.assertEqual(result, 0)
+            self.assertEqual(path.read_bytes(), ledger_before)
             self.assertIn("Authority audit ledger: VERIFIED", output.getvalue())
             self.assertIn("OUTCOME UNKNOWN", output.getvalue())
             self.assertIn("Reconcile unknown outcomes before retrying", output.getvalue())

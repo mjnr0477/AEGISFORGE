@@ -6,6 +6,8 @@ explicitly registered, local-only, and mutating actions require caller approval.
 from __future__ import annotations
 
 import re
+import secrets
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -24,6 +26,10 @@ class ToolPermissionError(PermissionError):
 
 class ToolApprovalRequired(ToolPermissionError):
     """Raised when a mutating operation has a grant but lacks its one-time approval."""
+
+
+class ToolExecutionAuditError(RuntimeError):
+    """Raised when a tool's execution outcome cannot be durably recorded."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +126,45 @@ class ToolRegistry:
             if decision.reason == "approval_required":
                 raise ToolApprovalRequired(message)
             raise ToolPermissionError(message)
-        return tool.handler(*args, **kwargs)
+
+        execution_id = secrets.token_urlsafe(24)
+        start_sequence = authority.record_execution_started(
+            decision=decision,
+            execution_id=execution_id,
+            adapter_id="local-tool-registry",
+            operation=name,
+        )
+        started_ns = time.monotonic_ns()
+        try:
+            result = tool.handler(*args, **kwargs)
+        except Exception as handler_error:
+            duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
+            try:
+                authority.record_execution_result(
+                    start_sequence=start_sequence,
+                    execution_id=execution_id,
+                    outcome="failed",
+                    duration_ms=duration_ms,
+                    error_type=type(handler_error).__name__,
+                )
+            except Exception as audit_error:
+                raise ToolExecutionAuditError(
+                    "tool failed, but its failure could not be recorded; reconcile before retrying"
+                ) from audit_error
+            raise
+        duration_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
+        try:
+            authority.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id=execution_id,
+                outcome="succeeded",
+                duration_ms=duration_ms,
+            )
+        except Exception as audit_error:
+            raise ToolExecutionAuditError(
+                "tool returned, but its success could not be recorded; reconcile before retrying"
+            ) from audit_error
+        return result
 
     def describe(self) -> list[dict[str, Any]]:
         """Return a safe, serializable catalog; handlers are never exposed."""

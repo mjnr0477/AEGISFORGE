@@ -358,6 +358,22 @@ class AuthorityKernelTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditLogIntegrityError, "safety limit"):
                 self.make_kernel(audit_path=path)
 
+    def test_append_refuses_to_exceed_audit_size_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audit.jsonl"
+            kernel = self.make_kernel(audit_path=path)
+
+            with patch("aegisforge.authority.MAX_AUDIT_LOG_BYTES", 1):
+                with self.assertRaisesRegex(AuditLogIntegrityError, "append would exceed"):
+                    kernel.authorize(
+                        subject="operator",
+                        capability="project.inspect",
+                        resource="project:/repo-a",
+                    )
+
+            self.assertEqual(path.read_bytes(), b"")
+            self.assertEqual(kernel.audit_entries(), [])
+
     def test_audit_entries_are_returned_as_defensive_copies(self):
         kernel = self.make_kernel()
         kernel.authorize(subject="operator", capability="project.inspect", resource="project:/repo-a")

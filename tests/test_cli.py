@@ -64,7 +64,7 @@ class CLITests(unittest.TestCase):
                 resource="project:/repo-a",
             )
             forged = path.read_text(encoding="utf-8").replace(
-                "unknown_capability", "forged_capability"
+                "no_active_exact_scope_grant", "forged_exact_scope_grant"
             )
             path.write_text(forged, encoding="utf-8")
 

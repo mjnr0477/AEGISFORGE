@@ -174,7 +174,7 @@ class AdapterRegistryTests(unittest.TestCase):
                                  subject="operator", arguments={"mode": nested})
 
     def test_encoded_payload_size_includes_json_string_overhead(self):
-        oversized = {"mode": ["x" * 8192 for _ in range(9)]}
+        oversized = {"mode": ["x" * 8192 for _ in range(8)]}
         with self.assertRaises(ValueError):
             self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
                                  subject="operator", arguments=oversized)

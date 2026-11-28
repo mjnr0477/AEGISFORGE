@@ -291,6 +291,48 @@ class AuthorityKernelTests(unittest.TestCase):
             with self.assertRaises(AuditLogIntegrityError):
                 self.make_kernel(audit_path=path)
 
+    def test_read_only_queries_reverify_persisted_ledger_after_initialization(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audit.jsonl"
+            kernel = self.make_kernel(audit_path=path)
+            decision = kernel.authorize(
+                subject="operator",
+                capability="project.inspect",
+                resource="project:/repo-a",
+            )
+            kernel.record_execution_started(
+                decision=decision,
+                execution_id="execution-read-check-0001",
+                adapter_id="demo-adapter",
+                operation="inspect",
+            )
+
+            forged = path.read_text(encoding="utf-8").replace(
+                "authorized_active_grant", "forged_active_grant"
+            )
+            path.write_text(forged, encoding="utf-8")
+
+            with self.assertRaises(AuditLogIntegrityError):
+                kernel.audit_entries()
+            with self.assertRaises(AuditLogIntegrityError):
+                kernel.pending_executions()
+
+    def test_read_only_queries_detect_audit_ledger_disappearing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audit.jsonl"
+            kernel = self.make_kernel(audit_path=path)
+            kernel.authorize(
+                subject="operator",
+                capability="project.inspect",
+                resource="project:/repo-a",
+            )
+            path.unlink()
+
+            with self.assertRaisesRegex(AuditLogIntegrityError, "audit log disappeared"):
+                kernel.audit_entries()
+            with self.assertRaisesRegex(AuditLogIntegrityError, "audit log disappeared"):
+                kernel.pending_executions()
+
     def test_audit_entries_are_returned_as_defensive_copies(self):
         kernel = self.make_kernel()
         kernel.authorize(subject="operator", capability="project.inspect", resource="project:/repo-a")

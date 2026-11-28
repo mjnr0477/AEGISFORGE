@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from aegisforge.analyzers import analyze_python, analyze_text
 from aegisforge.reporters import to_json, to_sarif, to_text
-from aegisforge.scanner import scan_directory
+from aegisforge.scanner import UnsafeScanFileError, collect_files, read_source_file, scan_directory
 
 class AnalyzerTests(unittest.TestCase):
     def test_detects_dynamic_python_execution(self):
@@ -47,6 +47,45 @@ class AnalyzerTests(unittest.TestCase):
             self.assertEqual(payload["tool"]["name"], "AegisForge")
             self.assertEqual(sarif["version"], "2.1.0")
             self.assertIn("AegisForge scan", to_text(result))
+
+    def test_rooted_read_rejects_directory_swapped_for_symlink_after_enumeration(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:
+            root = Path(folder)
+            original_dir = root / "package"
+            original_dir.mkdir()
+            source = original_dir / "module.py"
+            source.write_text("eval(user_input)\n", encoding="utf-8")
+            outside_source = Path(outside) / "module.py"
+            outside_source.write_text("SECRET = 'outside-root'\n", encoding="utf-8")
+
+            paths, _skipped, errors = collect_files(root)
+            self.assertEqual(errors, [])
+            self.assertEqual(paths, [source])
+
+            original_dir.rename(root / "package-original")
+            try:
+                original_dir.symlink_to(Path(outside), target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks are unavailable on this platform")
+
+            with self.assertRaises((OSError, UnsafeScanFileError)):
+                read_source_file(source, root=root)
+
+    def test_rooted_read_rejects_file_outside_scan_root(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:
+            root = Path(folder)
+            outside_source = Path(outside) / "secret.py"
+            outside_source.write_text("SECRET = True\n", encoding="utf-8")
+            with self.assertRaises(UnsafeScanFileError):
+                read_source_file(outside_source, root=root)
+
+    def test_rooted_read_accepts_regular_nested_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            nested = root / "pkg" / "module.py"
+            nested.parent.mkdir()
+            nested.write_text("print('safe')\n", encoding="utf-8")
+            self.assertEqual(read_source_file(nested, root=root), "print('safe')\n")
 
     def test_scan_skips_symlink_files(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:

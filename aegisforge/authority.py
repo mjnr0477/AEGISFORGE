@@ -487,8 +487,12 @@ class AuthorityKernel:
             raise ValueError("execution outcome must be 'succeeded', 'failed', or 'timed_out'")
         if isinstance(start_sequence, bool) or not isinstance(start_sequence, int) or start_sequence < 1:
             raise ValueError("start_sequence must be a positive integer")
-        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms < 0:
-            raise ValueError("duration_ms must be a non-negative integer")
+        if (
+            isinstance(duration_ms, bool)
+            or not isinstance(duration_ms, int)
+            or not 0 <= duration_ms <= (1 << 63) - 1
+        ):
+            raise ValueError("duration_ms must be a non-negative signed 64-bit integer")
         if outcome in {"failed", "timed_out"}:
             _validate_label(error_type, "error_type", 256)
         elif error_type is not None:

@@ -115,7 +115,13 @@ class ToolRegistryTests(unittest.TestCase):
         registry=ToolRegistry()
         registry.register(ActionTool("inspect","Read-only inspection",lambda:None))
         catalog=registry.describe()
-        self.assertEqual(catalog,[{"name":"inspect","description":"Read-only inspection","mutates":False}])
+        self.assertEqual(catalog,[{
+            "name":"inspect",
+            "description":"Read-only inspection",
+            "mutates":False,
+            "capability":None,
+            "scope_bound":False,
+        }])
         self.assertNotIn("handler",catalog[0])
 
 class MissionRunnerTests(unittest.TestCase):

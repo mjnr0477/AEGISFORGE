@@ -263,9 +263,12 @@ class AdapterRegistryTests(unittest.TestCase):
                                  subject="operator", arguments={})
         self.assertEqual(result, "original")
 
-    def test_simulation_resource_identity_has_no_public_setter(self):
+    def test_simulation_resource_identity_is_immutable(self):
         with self.assertRaises(AttributeError):
             self.simulator.resource_id = "another-resource"
+        with self.assertRaises(AttributeError):
+            self.simulator._resource_id = "another-resource"
+        self.assertEqual(self.simulator.resource_id, "demo-service")
 
     def test_registration_requires_exact_handler_set_and_catalog_has_no_handlers(self):
         registry = AdapterRegistry(self.kernel)

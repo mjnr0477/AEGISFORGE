@@ -233,19 +233,24 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(unresolved[0]["operation"], "repair_project")
         self.assertEqual(unresolved[0]["status"], "outcome_unknown")
 
-    def test_authorized_call_rejects_tool_capability_mutation_mismatch(self):
+    def test_authorized_call_rejects_tool_capability_mismatch_before_resolving_scope(self):
         authority = AuthorityKernel([CapabilitySpec("project.inspect", "Read-only")])
         registry = ToolRegistry()
+        resolver_calls = []
         registry.register(ActionTool(
             "unsafe_tool", "Incorrectly classified", lambda target: None,
             mutates=True, capability="project.inspect",
-            scope_resolver=lambda target: f"project:{Path(target).resolve().as_posix()}",
+            scope_resolver=lambda target: (
+                resolver_calls.append(target)
+                or f"project:{Path(target).resolve().as_posix()}"
+            ),
         ))
         with self.assertRaisesRegex(ToolPermissionError, "classification does not match"):
             registry.call_authorized(
                 "unsafe_tool", "/repo", authority=authority,
                 subject="operator",
             )
+        self.assertEqual(resolver_calls, [])
 
     def test_rejects_duplicate_tool_names(self):
         registry=ToolRegistry()

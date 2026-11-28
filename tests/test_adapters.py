@@ -20,10 +20,12 @@ class AdapterRegistryTests(unittest.TestCase):
         self.now = datetime(2026, 11, 28, 10, 0, tzinfo=timezone.utc)
         capabilities = (
             CapabilitySpec("service.inspect", "Inspect service"),
+            CapabilitySpec("service.restart", "Restart simulated service", mutates=True),
             CapabilitySpec("device.control", "Control simulated device", mutates=True),
         )
         grants = (
             Grant("operator", "service.inspect", "simulation:demo-service", self.now + timedelta(hours=1)),
+            Grant("operator", "service.restart", "simulation:demo-service", self.now + timedelta(hours=1)),
             Grant("operator", "device.control", "simulation:demo-service", self.now + timedelta(hours=1)),
         )
         self.kernel = AuthorityKernel(capabilities, grants, clock=lambda: self.now)
@@ -99,6 +101,83 @@ class AdapterRegistryTests(unittest.TestCase):
             self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
                                  subject="operator", arguments={"mode": "unsafe"})
 
+
+    def test_restart_uses_separate_service_capability_and_single_use_approval(self):
+        token = self.kernel.issue_approval(
+            subject="operator", capability="service.restart",
+            resource="simulation:demo-service", approver="authenticated-owner",
+        )
+        status = self.registry.invoke(
+            adapter_id="simulation", operation_name="restart",
+            subject="operator", arguments={}, approval_token=token,
+        )
+        self.assertEqual(status["restart_count"], 1)
+        self.assertTrue(status["simulated"])
+
+    def test_arguments_must_be_bounded_plain_json_data(self):
+        class CustomValue:
+            pass
+
+        with self.assertRaises(TypeError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": CustomValue()})
+        with self.assertRaises(TypeError):
+            self.registry.invoke(adapter_id="simulation", operation_name="inspect_status",
+                                 subject="operator", arguments=MappingProxyType({}))
+
+    def test_argument_payload_limits_are_enforced(self):
+        with self.assertRaises(ValueError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": "x" * 8193})
+        nested = {}
+        cursor = nested
+        for _ in range(18):
+            cursor["next"] = {}
+            cursor = cursor["next"]
+        with self.assertRaises(ValueError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": nested})
+
+    def test_non_finite_json_numbers_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": float("nan")})
+
+    def test_validator_receives_deeply_immutable_arguments(self):
+        def reject_mutation(arguments):
+            arguments["nested"]["value"] = "changed"
+
+        spec = AdapterSpec(
+            "immutable-test", "test",
+            {"inspect": OperationSpec("inspect", "service.inspect", False, reject_mutation)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+        registry = AdapterRegistry(self.kernel)
+        registry.register(spec, {"inspect": lambda arguments: "should-not-run"})
+        original = {"nested": {"value": "original"}}
+        with self.assertRaises(TypeError):
+            registry.invoke(adapter_id="immutable-test", operation_name="inspect",
+                            subject="operator", arguments=original)
+        self.assertEqual(original["nested"]["value"], "original")
+
+    def test_registered_handlers_are_snapshotted(self):
+        registry = AdapterRegistry(self.kernel)
+        spec = AdapterSpec(
+            "snapshot-test", "test",
+            {"inspect": OperationSpec("inspect", "service.inspect", False, lambda args: None)},
+            lambda operation, arguments: "simulation:demo-service",
+        )
+        handlers = {"inspect": lambda arguments: "original"}
+        registry.register(spec, handlers)
+        handlers["inspect"] = lambda arguments: "replaced"
+        result = registry.invoke(adapter_id="snapshot-test", operation_name="inspect",
+                                 subject="operator", arguments={})
+        self.assertEqual(result, "original")
+
+    def test_simulation_resource_identity_has_no_public_setter(self):
+        with self.assertRaises(AttributeError):
+            self.simulator.resource_id = "another-resource"
+
     def test_registration_requires_exact_handler_set_and_catalog_has_no_handlers(self):
         registry = AdapterRegistry(self.kernel)
         with self.assertRaises(ValueError):
@@ -108,7 +187,7 @@ class AdapterRegistryTests(unittest.TestCase):
         self.assertNotIn("handlers", catalog[0])
         self.assertEqual(
             {item["name"] for item in catalog[0]["operations"]},
-            {"inspect_status", "set_mode"},
+            {"inspect_status", "restart", "set_mode"},
         )
 
 

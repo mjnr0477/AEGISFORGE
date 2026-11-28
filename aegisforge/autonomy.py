@@ -125,7 +125,13 @@ class ToolRegistry:
     def describe(self) -> list[dict[str, Any]]:
         """Return a safe, serializable catalog; handlers are never exposed."""
         return [
-            {"name": item.name, "description": item.description, "mutates": item.mutates}
+            {
+                "name": item.name,
+                "description": item.description,
+                "mutates": item.mutates,
+                "capability": item.capability,
+                "scope_bound": item.scope_resolver is not None,
+            }
             for item in sorted(self._tools.values(), key=lambda item: item.name)
         ]
 

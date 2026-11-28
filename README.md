@@ -67,6 +67,7 @@ aegisforge authority check --policy ./authority-policy.json \
   --audit-log ./.aegisforge/authority.jsonl \
   --subject operator --capability project.inspect \
   --resource project:/absolute/path/to/my-project
+aegisforge authority audit --audit-log ./.aegisforge/authority.jsonl
 ~~~
 
 Baseline comparison reports new, known, and resolved findings. Repair mode previews supported changes by default; --apply is explicit, writes backups under .aegisforge/backups, rescans the project, and restores originals if the targeted finding remains.
@@ -78,6 +79,8 @@ A scan returns exit code 1 when a finding meets the selected --fail-on threshold
 ### Scoped authority checks
 
 The authority kernel evaluates a policy; it does not execute the requested operation. Policies use exact subject, capability, and resource matches, with an expiry on every grant. Unknown capabilities, missing grants, and expired grants are denied. Wildcards and implicit inheritance are not supported.
+
+The read-only `aegisforge authority audit --audit-log PATH` command verifies the saved hash chain before displaying events and unresolved executions. A missing or tampered log is an operational error; an execution start without a result is shown as outcome-unknown and is never retried by the command.
 
 The Python mission API can enforce the policy before every registered operation. The tool registry derives each project resource from the actual target argument, so callers cannot authorize one path and pass another path to the handler:
 

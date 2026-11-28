@@ -205,7 +205,7 @@ class _AuditTrail:
             entry = {**payload, "hash": self._digest(payload)}
             line = (
                 json.dumps(entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-                .encode("utf-8") + b"\\n"
+                .encode("utf-8") + b"\n"
             )
             if self.path is not None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)

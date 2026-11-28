@@ -16,6 +16,7 @@
 - Restricted adapter payloads to bounded JSON data and froze nested inputs before validation, scope resolution, and handler execution.
 - Snapshotted registered operation handlers and added separate simulated service-restart and device-mode operations with distinct capabilities.
 - Added CI coverage for the interactive simulator's approved and declined mutation paths, including audit-ledger assertions.
+- Packaged the simulator walkthrough as the `aegisforge-sim-demo` console command, with safe EOF/interrupt behavior and wheel-entry-point checks.
 - Packaged the simulator walkthrough as `aegisforge-sim-demo` and made non-interactive EOF/interrupt defaults decline all pending mutations.
 
 

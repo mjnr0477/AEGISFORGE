@@ -21,6 +21,7 @@ from typing import Callable, Iterable
 CAPABILITY_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)+$")
 ZERO_HASH = "0" * 64
 MAX_APPROVAL_TTL_SECONDS = 900
+MAX_OUTSTANDING_APPROVALS = 4096
 
 
 class AuthorityError(RuntimeError):
@@ -291,6 +292,21 @@ class AuthorityKernel:
             for grant in self._grants
         )
 
+    def _prune_expired_approvals(
+        self,
+        now: datetime,
+        *,
+        preserve_token: str | None = None,
+    ) -> None:
+        """Discard expired tokens, except one being checked for an audit reason."""
+        expired = [
+            token
+            for token, approval in self._approvals.items()
+            if token != preserve_token and approval.expires_at <= now
+        ]
+        for token in expired:
+            self._approvals.pop(token, None)
+
     def issue_approval(
         self,
         *,
@@ -315,8 +331,11 @@ class AuthorityKernel:
             raise ValueError(f"approval TTL must be between 1 and {MAX_APPROVAL_TTL_SECONDS} seconds")
         with self._lock:
             now = self._now()
+            self._prune_expired_approvals(now)
             if not self._has_active_grant(subject, capability, resource, now):
                 raise AuthorityError("cannot approve an operation without an active exact-scope grant")
+            if len(self._approvals) >= MAX_OUTSTANDING_APPROVALS:
+                raise AuthorityError("too many outstanding approvals; retry after existing approvals expire")
             token = secrets.token_urlsafe(32)
             self._audit.append({
                 "type": "approval_issued",
@@ -346,6 +365,7 @@ class AuthorityKernel:
             raise ValueError("capability must be a dotted lowercase identifier")
         with self._lock:
             now = self._now()
+            self._prune_expired_approvals(now, preserve_token=approval_token)
             spec = self._capabilities.get(capability)
             reason = "unknown_capability"
             allowed = False

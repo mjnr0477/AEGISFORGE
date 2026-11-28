@@ -59,6 +59,58 @@ class ToolRegistryTests(unittest.TestCase):
                 subject="operator",
             )
 
+    def test_authorized_tool_uses_one_immutable_argument_snapshot_for_scope_and_handler(self):
+        now = datetime.now(timezone.utc)
+        original_arguments = {"target": "/repo"}
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "inspect_snapshot", "Snapshot authorized inputs",
+            lambda arguments: arguments["target"],
+            capability="project.inspect",
+            scope_resolver=lambda arguments: (
+                f"project:{Path(arguments['target']).resolve().as_posix()}"
+            ),
+        ))
+        authorize = authority.authorize
+
+        def mutate_callers_copy(**decision):
+            original_arguments["target"] = "/other"
+            return authorize(**decision)
+
+        with patch.object(authority, "authorize", side_effect=mutate_callers_copy):
+            result = registry.call_authorized(
+                "inspect_snapshot", original_arguments,
+                authority=authority, subject="operator",
+            )
+
+        self.assertEqual(original_arguments["target"], "/other")
+        self.assertEqual(result, "/repo")
+
+    def test_authorized_tool_rejects_custom_mutable_argument_objects(self):
+        class MutableTarget:
+            pass
+
+        now = datetime.now(timezone.utc)
+        authority = AuthorityKernel(
+            [CapabilitySpec("project.inspect", "Inspect project")],
+            [Grant("operator", "project.inspect", "project:/repo", now + timedelta(minutes=5))],
+        )
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "inspect_custom", "Reject custom mutable values", lambda value: "should-not-run",
+            capability="project.inspect", scope_resolver=lambda value: "project:/repo",
+        ))
+        with self.assertRaisesRegex(ToolPermissionError, "do not support mutable value type"):
+            registry.call_authorized(
+                "inspect_custom", MutableTarget(),
+                authority=authority, subject="operator",
+            )
+        self.assertEqual(authority.audit_entries(), [])
+
     def test_authorized_mutation_requires_single_use_approval(self):
         now = datetime.now(timezone.utc)
         authority = AuthorityKernel(

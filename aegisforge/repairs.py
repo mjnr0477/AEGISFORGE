@@ -113,7 +113,7 @@ def propose_repairs(target: str | Path) -> list[RepairProposal]:
     proposals: list[RepairProposal] = []
     for path in paths:
         try:
-            text = read_source_file(path)
+            text = read_source_file(path, root=root)
         except (OSError, UnicodeError, ValueError):
             continue
         relative_path = path.relative_to(root).as_posix()
@@ -158,14 +158,12 @@ def apply_repairs(
         seen_paths.add(normalized)
         candidate = root.joinpath(*relative.parts)
         _reject_symlink_components(root, candidate)
-        resolved = candidate.resolve()
+        resolved = candidate
         try:
             resolved.relative_to(root)
         except ValueError as exc:
             raise RuntimeError(f"Refusing path outside scan root: {proposal.path}") from exc
-        if not resolved.is_file():
-            raise RuntimeError(f"Source file is missing: {proposal.path}")
-        current = read_source_file(resolved)
+        current = read_source_file(resolved, root=root)
         if current != proposal.original:
             raise RuntimeError(f"Source changed since preview: {proposal.path}")
         expected = _repair_text(resolved, normalized, current)
@@ -205,7 +203,7 @@ def apply_repairs(
             temp_name: str | None = None
             try:
                 _reject_symlink_components(root, path)
-                if read_source_file(path) != proposal.original:
+                if read_source_file(path, root=root) != proposal.original:
                     raise RuntimeError(f"Source changed since preview: {proposal.path}")
                 with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
                     temp_name = handle.name

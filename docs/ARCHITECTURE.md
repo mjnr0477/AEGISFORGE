@@ -31,7 +31,7 @@ When an audit path is configured, every approval issuance and authorization deci
 
 The initial capability catalogue names project, service, and device operations. These names define policy vocabulary only; no production service or device connector is included. The explicit adapter layer is separate from the legacy tool registry: trusted application code registers a fixed adapter specification and exact operation-handler set. Every operation declares one capability, a read-only/mutating classification, an input validator, and a resource resolver. Registration rejects unknown capabilities and classification mismatches; invocation validates input, derives the resource from the same argument mapping passed to the handler, and asks the Authority Kernel immediately before execution. The registry has no dynamic discovery, imports, shell access, or network behavior. Its catalog exposes metadata only.
 
-The first adapter is deliberately a deterministic in-memory simulator. It can inspect a simulated service and change a simulated mode; it never touches the host operating system, a real service, a network, or a physical device. The mutation requires an active exact-scope `device.control` grant and a one-time approval token. This validates the adapter boundary without implying that a live connector exists. Real integrations must be separately reviewed, narrowly scoped, and tested against their own threat model before registration.
+The first adapter is deliberately a deterministic in-memory simulator. It can inspect a simulated service, increment a simulated restart counter, and change a simulated mode; it never touches the host operating system, a real service, a network, or a physical device. The two mutation operations use separate `service.restart` and `device.control` capabilities and each requires an active exact-scope grant plus a one-time approval token. Invocation accepts only plain JSON objects, copies and freezes nested objects/arrays, rejects non-finite numbers and custom Python objects, and enforces depth, node-count, string-length, and payload-size limits. Registration snapshots operation handlers and prevents public mutation of the declared operation map. These constraints reduce mutable-input and time-of-check/time-of-use risks, but adapters and their resolvers/handlers remain trusted application code. This validates the adapter boundary without implying that a live connector exists. Real integrations must be separately reviewed, narrowly scoped, and tested against their own threat model before registration.
 
 ## Trust boundaries
 
@@ -46,6 +46,8 @@ The first adapter is deliberately a deterministic in-memory simulator. It can in
 - Container rules identify privileged mode, hostPath mounts and privilege-escalation settings.
 - The local tool registry does not perform dynamic discovery or import plugins. Its catalog exposes tool names, descriptions, and mutation flags but not callable handlers.
 - Mutating tool calls require explicit approval at the registry boundary.
+- Adapter invocations accept bounded JSON-only values; nested inputs are copied and frozen before scope resolution and handler invocation.
+- Adapter registrations are explicit allowlists with per-operation capabilities and immutable metadata/handler mappings; no runtime plugin discovery or arbitrary command execution is provided.
 - Evidence snippets are redacted before they enter reports.
 - Rules are conservative and may produce false positives or miss issues; human review is required.
 

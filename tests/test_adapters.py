@@ -268,6 +268,8 @@ class AdapterRegistryTests(unittest.TestCase):
             self.simulator.resource_id = "another-resource"
         with self.assertRaises(AttributeError):
             self.simulator._resource_id = "another-resource"
+        with self.assertRaises(AttributeError):
+            del self.simulator._resource_id
         self.assertEqual(self.simulator.resource_id, "demo-service")
 
     def test_registration_requires_exact_handler_set_and_catalog_has_no_handlers(self):

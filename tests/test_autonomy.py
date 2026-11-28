@@ -298,6 +298,36 @@ class MissionRunnerTests(unittest.TestCase):
             self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
             self.assertIsNotNone(result.final_scan)
 
+    def test_authorized_mission_rejects_backup_destination_outside_project(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "project"
+            root.mkdir()
+            outside_backup = base / "external-backups"
+            source = root / "settings.env"
+            source.write_text("DEBUG=true\n", encoding="utf-8")
+            resource = f"project:{root.resolve().as_posix()}"
+            now = datetime.now(timezone.utc)
+            authority = AuthorityKernel(
+                DEFAULT_CAPABILITIES,
+                [
+                    Grant("operator", "project.inspect", resource, now + timedelta(minutes=5)),
+                    Grant("operator", "project.repair", resource, now + timedelta(minutes=5)),
+                ],
+            )
+            token = authority.issue_approval(
+                subject="operator", capability="project.repair",
+                resource=resource, approver="owner",
+            )
+            result = run_audit_mission(
+                root, apply_supported_repairs=True, backup_dir=outside_backup,
+                authority=authority, subject="operator", approval_token=token,
+            )
+            self.assertEqual(result.status, "failed")
+            self.assertIn("backup directory must remain inside", " ".join(result.errors))
+            self.assertEqual(source.read_text(encoding="utf-8"), "DEBUG=true\n")
+            self.assertFalse(outside_backup.exists())
+
     def test_authorized_mission_denies_repair_without_repair_grant(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

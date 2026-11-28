@@ -60,23 +60,7 @@ def _open_file_descriptor(path: Path, root: Path | None = None) -> int:
         | getattr(os, "O_NONBLOCK", 0)
         | getattr(os, "O_CLOEXEC", 0)
     )
-    if not _supports_safe_dir_fd_open():
-        before = _regular_metadata(path)
-        fd = os.open(path, flags)
-        opened = os.fstat(fd)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
-        ):
-            os.close(fd)
-            raise UnsafeScanFileError(f"refusing changed file: {path}")
-        return fd
-
-    if root is None:
-        root_path = Path(path).parent.resolve()
-        relative = Path(path).name
-        directory_parts = ()
-    else:
+    if root is not None:
         root_path = Path(root).expanduser().resolve()
         candidate = Path(path)
         if not candidate.is_absolute():
@@ -89,6 +73,29 @@ def _open_file_descriptor(path: Path, root: Path | None = None) -> int:
             raise UnsafeScanFileError(f"refusing unsafe file path: {path}")
         relative = relative_path.parts[-1]
         directory_parts = relative_path.parts[:-1]
+    else:
+        root_path = Path(path).parent.resolve()
+        relative = Path(path).name
+        directory_parts = ()
+
+    if not _supports_safe_dir_fd_open():
+        if root is not None:
+            current = root_path
+            for component in directory_parts:
+                current = current / component
+                if current.is_symlink():
+                    raise UnsafeScanFileError(f"refusing symlink directory component: {current}")
+        candidate = root_path.joinpath(*directory_parts, relative)
+        before = _regular_metadata(candidate)
+        fd = os.open(candidate, flags)
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+        ):
+            os.close(fd)
+            raise UnsafeScanFileError(f"refusing changed file: {candidate}")
+        return fd
 
     directory_fd = _open_directory_chain(root_path)
     try:

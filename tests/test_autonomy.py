@@ -21,12 +21,18 @@ class ToolRegistryTests(unittest.TestCase):
         registry.register(ActionTool("read_project","Read-only example",lambda value:value.upper()))
         self.assertEqual(registry.call("read_project","hello"),"HELLO")
 
-    def test_mutating_tool_requires_explicit_approval(self):
-        registry=ToolRegistry()
-        registry.register(ActionTool("change_project","Writes local files",lambda:"changed",mutates=True))
-        with self.assertRaisesRegex(ToolPermissionError,"explicit approval"):
-            registry.call("change_project")
-        self.assertEqual(registry.call("change_project",approve_mutation=True),"changed")
+    def test_legacy_call_never_authorizes_mutating_tools(self):
+        calls = []
+        registry = ToolRegistry()
+        registry.register(ActionTool(
+            "change_project", "Writes local files",
+            lambda: calls.append("changed"), mutates=True,
+        ))
+        for approval_flag in (False, True):
+            with self.subTest(approve_mutation=approval_flag):
+                with self.assertRaisesRegex(ToolPermissionError, "call_authorized"):
+                    registry.call("change_project", approve_mutation=approval_flag)
+        self.assertEqual(calls, [])
 
     def test_authorized_read_only_tool_runs_only_with_exact_grant(self):
         now = datetime.now(timezone.utc)

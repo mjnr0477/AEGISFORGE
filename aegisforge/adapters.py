@@ -293,6 +293,11 @@ class SimulationAdapter:
         self._restart_count = 0
         self._lock = RLock()
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_resource_id" and hasattr(self, "_resource_id"):
+            raise AttributeError("simulation resource identity is immutable")
+        object.__setattr__(self, name, value)
+
     @property
     def resource_id(self) -> str:
         return self._resource_id

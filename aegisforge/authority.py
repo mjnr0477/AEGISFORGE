@@ -449,6 +449,13 @@ class AuthorityKernel:
                 for item in entries
             ):
                 raise AuthorityError("execution_id has already been used")
+            if any(
+                isinstance(item.get("event"), dict)
+                and item["event"].get("type") == "execution_started"
+                and item["event"].get("authorization_sequence") == sequence
+                for item in entries
+            ):
+                raise AuthorityError("authorization decision has already started an execution")
             now = self._now()
             return self._audit.append({
                 "type": "execution_started",

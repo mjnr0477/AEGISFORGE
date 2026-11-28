@@ -18,7 +18,7 @@ The registry checks that each capability exists in the Authority Kernel and that
 
 AdapterRegistry.invoke accepts a plain Python dict containing JSON data only. It copies the data into deeply immutable mappings and tuples before validation, scope resolution, authorization, or handler execution. Custom Python objects, non-finite floats, integers outside signed 64-bit range, invalid UTF-8 strings, and excessive nesting, item counts, string lengths, or encoded payload size are rejected.
 
-The resource resolver runs on this immutable copy. The handler receives that same copy, not the caller's original object. This prevents callers or validators from changing a nested resource selector between scope calculation and execution.
+The validator and resource resolver run before authorization, so both must be deterministic, local, and side-effect-free: no file writes, network requests, subprocesses, external mutations, or approval prompts. The resource resolver runs on the immutable copy. The handler receives that same copy, not the caller's original object. This prevents callers or validators from changing a nested resource selector between scope calculation and execution. The handler is the only stage allowed to perform the operation, and it is called only after an allow decision.
 
 A resolver must bind every target selector that can affect the handler's side effects. Do not derive a grant from one target ID while allowing the handler to act on a different hidden/default target. Prefer stable resource IDs, not display names or mutable labels. Keep each tenant, workspace, service, or device scope exact; do not add wildcard grants or infer parent access.
 
@@ -58,7 +58,7 @@ Do not build a generic run_command, arbitrary URL fetch, unrestricted filesystem
 
 ## Handler behavior
 
-Adapters are trusted application code; the registry does not sandbox Python handlers. Keep handlers small and bounded. A handler must not silently switch resource scope, execute user-supplied code, or perform unreviewed side effects. For network-backed adapters added later, use verified TLS, explicit destination allowlists, bounded connect/read timeouts, and operation-specific retry rules. Never blindly retry a non-idempotent mutation.
+Adapters are trusted application code; the registry does not sandbox Python validators, resource resolvers, or handlers. Keep validators and resolvers pure, and keep handlers small and bounded. A handler must not silently switch resource scope, execute user-supplied code, or perform unreviewed side effects. For network-backed adapters added later, use verified TLS, explicit destination allowlists, bounded connect/read timeouts, and operation-specific retry rules. Never blindly retry a non-idempotent mutation.
 
 The registry performs authorization immediately before the handler. Authorization is fail-closed if the audit log cannot be verified or appended. The Authority Kernel's ledger records approval issuance and authorization decisions; in this version it does not record whether the adapter handler later completed, failed, or timed out. Do not interpret an allowed decision as proof of successful execution.
 

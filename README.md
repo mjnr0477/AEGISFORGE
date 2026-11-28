@@ -158,7 +158,7 @@ When an audit path is configured (and always for the CLI), each check appends a 
 - Evidence is redacted before it enters reports.
 - A clean report is not a security certification. Validate findings in context.
 
-See [SECURITY.md](SECURITY.md), [DESIGN.md](DESIGN.md), and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [SECURITY.md](SECURITY.md), [DESIGN.md](DESIGN.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the [adapter engineering contract](docs/ADAPTERS.md).
 
 ## Development
 

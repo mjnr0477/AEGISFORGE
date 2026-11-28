@@ -18,7 +18,8 @@
 - Added CI coverage for the interactive simulator's approved and declined mutation paths, including audit-ledger assertions.
 - Packaged the simulator walkthrough as the `aegisforge-sim-demo` console command, with safe EOF/interrupt behavior and wheel-entry-point checks.
 - Added a concurrent invocation regression test proving a one-time mutation approval can execute only once when two calls race.
-- Added hash-chained execution lifecycle records: handler start before invocation and success/failure outcome afterward, linked to the exact authorization decision.
+- Added hash-chained execution lifecycle records: handler start before invocation and success/failure/timeout outcome afterward, linked to the exact authorization decision.
+- Added a read-only pending-execution view to identify starts missing a terminal result and support safe host reconciliation.
 - Added failure-boundary tests ensuring audit failure prevents handler start and an unrecorded final outcome is surfaced as requiring reconciliation.
 - Applied the same execution start/result lifecycle to the authorized local ToolRegistry used by project missions.
 - Recorded Python TimeoutError as a distinct timed_out result, without claiming that the registry forcibly interrupts handlers.

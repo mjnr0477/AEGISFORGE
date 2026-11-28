@@ -3,10 +3,9 @@ import io
 import json
 import os
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-
 
 from aegisforge import simulation_demo as DEMO
 

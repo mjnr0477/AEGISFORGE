@@ -8,6 +8,9 @@
 - Added a policy-file loader and an `authority check` CLI command; checks evaluate permission only and never execute the requested operation.
 - Added tests for scope isolation, expiration, approval reuse, policy validation, audit integrity and CLI outcomes.
 - Clarified that external service/device adapters and authenticated approval UX are separate future integrations.
+- Added resource-scope resolvers so tools bind grants to the actual target argument.
+- Integrated mission mapping, scanning, repair previews, approved repair application, and post-repair verification with the Authority Kernel.
+- Added tests for exact project binding, missing grants, missing approvals, and successful authorized repairs.
 
 
 ## 0.1.7 — repository bootstrap

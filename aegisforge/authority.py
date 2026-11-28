@@ -195,6 +195,11 @@ class _AuditTrail:
 
     def entries(self) -> list[dict[str, object]]:
         with self._lock:
+            # Read-only audit queries must not trust a stale in-memory snapshot.
+            # Reverify the persisted chain so tampering or truncation is surfaced
+            # before callers inspect history or decide whether an execution is pending.
+            if self.path is not None:
+                self._load_and_verify()
             return copy.deepcopy(self._entries)
 
 

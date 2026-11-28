@@ -5,6 +5,7 @@ plugin discovery, dynamic imports, shell execution, or network I/O.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -90,7 +91,7 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         raise TypeError("arguments must be a plain JSON object")
     if len(arguments) > 256:
         raise ValueError("arguments may contain at most 256 top-level keys")
-    budget = {"nodes": 0, "bytes": 0}
+    budget = {"nodes": 0}
 
     def clone(value: Any, depth: int) -> Any:
         budget["nodes"] += 1
@@ -103,12 +104,10 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         if type(value) is int:
             if value < -(1 << 63) or value > (1 << 63) - 1:
                 raise ValueError("integer arguments must fit in a signed 64-bit value")
-            budget["bytes"] += len(str(value))
             return value
         if type(value) is float:
             if not math.isfinite(value):
                 raise ValueError("non-finite numbers are not valid JSON arguments")
-            budget["bytes"] += len(repr(value))
             return value
         if type(value) is str:
             try:
@@ -117,7 +116,6 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
                 raise ValueError("argument strings must contain valid UTF-8 text") from exc
             if encoded_length > 8192:
                 raise ValueError("argument strings may not exceed 8192 UTF-8 bytes")
-            budget["bytes"] += encoded_length
             return value
         if type(value) is list:
             if len(value) > 1024:
@@ -131,7 +129,7 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
                 if type(key) is not str or not key or len(key) > 256:
                     raise TypeError("argument object keys must be non-empty strings of at most 256 characters")
                 try:
-                    budget["bytes"] += len(key.encode("utf-8"))
+                    key.encode("utf-8")
                 except UnicodeEncodeError as exc:
                     raise ValueError("argument keys must contain valid UTF-8 text") from exc
                 frozen[key] = clone(item, depth + 1)
@@ -139,8 +137,33 @@ def _freeze_json_arguments(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         raise TypeError(f"unsupported argument value type: {type(value).__name__}")
 
     frozen_root = clone(arguments, 0)
-    if budget["bytes"] > 65536:
-        raise ValueError("arguments exceed the 65536-byte payload limit")
+
+    def encoded_size(value: Any) -> int:
+        if value is None:
+            return 4
+        if type(value) is bool:
+            return 4 if value else 5
+        if type(value) is int:
+            return len(str(value))
+        if type(value) is float:
+            return len(json.dumps(value, allow_nan=False))
+        if type(value) is str:
+            return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+        if isinstance(value, Mapping):
+            entries = [
+                len(json.dumps(key, ensure_ascii=False).encode("utf-8"))
+                + 1
+                + encoded_size(item)
+                for key, item in value.items()
+            ]
+            return 2 + sum(entries) + max(0, len(entries) - 1)
+        if type(value) is tuple:
+            items = [encoded_size(item) for item in value]
+            return 2 + sum(items) + max(0, len(items) - 1)
+        raise TypeError("internal adapter argument encoding error")
+
+    if encoded_size(frozen_root) > 65536:
+        raise ValueError("arguments exceed the 65536-byte JSON payload limit")
     return frozen_root
 
 

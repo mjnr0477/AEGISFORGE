@@ -140,6 +140,73 @@ class AuthorityKernelTests(unittest.TestCase):
         self.assertFalse(expired_but_pruned.allowed)
         self.assertEqual(expired_but_pruned.reason, "invalid_or_consumed_approval")
 
+    def test_execution_lifecycle_requires_allowed_decision_and_one_result(self):
+        kernel = self.make_kernel()
+        denied = kernel.authorize(
+            subject="guest", capability="project.inspect", resource="project:/repo-a"
+        )
+        with self.assertRaisesRegex(AuthorityError, "allowed authorization decision"):
+            kernel.record_execution_started(
+                decision=denied,
+                execution_id="execution-denied-0001",
+                adapter_id="demo-adapter",
+                operation="inspect",
+            )
+
+        allowed = kernel.authorize(
+            subject="operator", capability="project.inspect", resource="project:/repo-a"
+        )
+        start_sequence = kernel.record_execution_started(
+            decision=allowed,
+            execution_id="execution-allowed-0001",
+            adapter_id="demo-adapter",
+            operation="inspect",
+        )
+        result_sequence = kernel.record_execution_result(
+            start_sequence=start_sequence,
+            execution_id="execution-allowed-0001",
+            outcome="succeeded",
+            duration_ms=12,
+        )
+        self.assertGreater(result_sequence, start_sequence)
+        events = [entry["event"] for entry in kernel.audit_entries()]
+        self.assertEqual(events[-2]["type"], "execution_started")
+        self.assertEqual(events[-1]["type"], "execution_result")
+        self.assertEqual(events[-1]["outcome"], "succeeded")
+        with self.assertRaisesRegex(AuthorityError, "already been recorded"):
+            kernel.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id="execution-allowed-0001",
+                outcome="succeeded",
+                duration_ms=13,
+            )
+
+    def test_execution_result_must_match_existing_start_event(self):
+        kernel = self.make_kernel()
+        allowed = kernel.authorize(
+            subject="operator", capability="project.inspect", resource="project:/repo-a"
+        )
+        start_sequence = kernel.record_execution_started(
+            decision=allowed,
+            execution_id="execution-match-0001",
+            adapter_id="demo-adapter",
+            operation="inspect",
+        )
+        with self.assertRaisesRegex(AuthorityError, "does not match its start event"):
+            kernel.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id="different-execution",
+                outcome="succeeded",
+                duration_ms=0,
+            )
+        with self.assertRaises(ValueError):
+            kernel.record_execution_result(
+                start_sequence=start_sequence,
+                execution_id="execution-match-0001",
+                outcome="unknown",
+                duration_ms=0,
+            )
+
     def test_audit_log_is_hash_chained_and_reloaded(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "audit.jsonl"

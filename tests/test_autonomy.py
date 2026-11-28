@@ -170,6 +170,10 @@ class ToolRegistryTests(unittest.TestCase):
                     approval_token=token,
                 )
         self.assertEqual(changes, ["changed"])
+        unresolved = authority.pending_executions()
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0]["operation"], "repair_project")
+        self.assertEqual(unresolved[0]["status"], "outcome_unknown")
 
     def test_authorized_call_rejects_tool_capability_mutation_mismatch(self):
         authority = AuthorityKernel([CapabilitySpec("project.inspect", "Read-only")])

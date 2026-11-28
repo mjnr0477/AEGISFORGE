@@ -11,7 +11,8 @@ import secrets
 import time
 from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path, PurePath
-from typing import Any, Callable
+from types import MappingProxyType
+from typing import Any, Callable, Mapping
 
 from .authority import CAPABILITY_RE, AuthorityKernel
 from .models import Finding, ScanResult

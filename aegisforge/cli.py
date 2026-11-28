@@ -64,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--resource", required=True, help="Exact resource identifier; no wildcard matching")
     check.add_argument("--format", choices=("text", "json"), default="text")
 
+    inspect = authority_actions.add_parser("audit", help="Verify and inspect a saved authority audit ledger")
+    inspect.add_argument("--audit-log", required=True, help="Existing append-only JSONL audit log")
+    inspect.add_argument("--format", choices=("text", "json"), default="text")
+
     baseline = commands.add_parser("baseline", help="Create or compare a local finding baseline")
     actions = baseline.add_subparsers(dest="baseline_action", required=True)
     create = actions.add_parser("create", help="Record the current complete scan as a baseline")
@@ -230,6 +234,72 @@ def _run_authority_check(args: argparse.Namespace) -> int:
     return 0 if decision.allowed else 1
 
 
+def _run_authority_audit(args: argparse.Namespace) -> int:
+    path = Path(args.audit_log).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"audit log does not exist or is not a regular file: {path}")
+
+    # Construction verifies the complete hash chain before any data is displayed.
+    # This command intentionally performs no writes and never retries an execution.
+    kernel = AuthorityKernel(DEFAULT_CAPABILITIES, audit_path=path)
+    entries = kernel.audit_entries()
+    pending = kernel.pending_executions()
+    if args.format == "json":
+        payload = {
+            "tool": "AegisForge",
+            "verified": True,
+            "entry_count": len(entries),
+            "entries": entries,
+            "pending_count": len(pending),
+            "pending_executions": pending,
+        }
+        sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\\n")
+        return 0
+
+    print("Authority audit ledger: VERIFIED")
+    print(f"Entries: {len(entries)}")
+    for entry in entries:
+        event = entry["event"]
+        event_type = event.get("type", "unknown")
+        prefix = f"[{entry['sequence']:04d}] {entry['timestamp']} {event_type}"
+        if event_type == "authorization_decision":
+            verdict = "ALLOW" if event.get("allowed") else "DENY"
+            detail = (
+                f"{verdict} {event.get('subject')} {event.get('capability')} "
+                f"@ {event.get('resource')} ({event.get('reason')})"
+            )
+        elif event_type == "execution_started":
+            detail = (
+                f"{event.get('adapter_id')}.{event.get('operation')} "
+                f"execution={event.get('execution_id')} "
+                f"@ {event.get('resource')}"
+            )
+        elif event_type == "execution_result":
+            detail = (
+                f"{event.get('outcome')} execution={event.get('execution_id')} "
+                f"duration_ms={event.get('duration_ms')}"
+            )
+        elif event_type == "approval_issued":
+            detail = (
+                f"{event.get('subject')} {event.get('capability')} "
+                f"@ {event.get('resource')} approver={event.get('approver')}"
+            )
+        else:
+            detail = "unrecognized event"
+        print(f"{prefix} — {detail}")
+
+    print(f"Unresolved executions: {len(pending)}")
+    for item in pending:
+        print(
+            f"  OUTCOME UNKNOWN {item['adapter_id']}.{item['operation']} "
+            f"execution={item['execution_id']} @ {item['resource']}"
+        )
+    if not pending:
+        print("  None")
+    print("This command is read-only. Reconcile unknown outcomes before retrying.")
+    return 0
+
+
 def _run_baseline_create(args: argparse.Namespace) -> int:
     result = scan_directory(args.target)
     destination = args.output or str(Path(result.root) / ".aegisforge" / "baseline.json")
@@ -276,6 +346,8 @@ def main(argv=None) -> int:
             return _run_mission(args)
         if args.command == "authority" and args.authority_action == "check":
             return _run_authority_check(args)
+        if args.command == "authority" and args.authority_action == "audit":
+            return _run_authority_audit(args)
         if args.command == "scan":
             return _run_scan(args)
         if args.command == "map":

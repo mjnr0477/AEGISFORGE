@@ -17,6 +17,7 @@
 - Snapshotted registered operation handlers and added separate simulated service-restart and device-mode operations with distinct capabilities.
 - Added CI coverage for the interactive simulator's approved and declined mutation paths, including audit-ledger assertions.
 - Packaged the simulator walkthrough as the `aegisforge-sim-demo` console command, with safe EOF/interrupt behavior and wheel-entry-point checks.
+- Added a concurrent invocation regression test proving a one-time mutation approval can execute only once when two calls race.
 - Packaged the simulator walkthrough as `aegisforge-sim-demo` and made non-interactive EOF/interrupt defaults decline all pending mutations.
 
 

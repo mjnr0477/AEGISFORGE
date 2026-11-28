@@ -29,6 +29,7 @@ jobs:
       - run: python -m pip install -e .
       - run: python -m unittest discover -s tests -v
       - run: aegisforge --version
+      - run: aegisforge-sim-demo </dev/null
 
   web-assets:
     runs-on: ubuntu-latest
@@ -56,6 +57,15 @@ jobs:
               raise SystemExit(f"Expected exactly one wheel, got {wheels}")
           with zipfile.ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
+              entry_points = [
+                  name for name in names
+                  if name.endswith(".dist-info/entry_points.txt")
+              ]
+              if len(entry_points) != 1:
+                  raise SystemExit(f"Expected one wheel entry-points file, got {entry_points}")
+              script_metadata = archive.read(entry_points[0]).decode("utf-8")
+          if "aegisforge-sim-demo = aegisforge.simulation_demo:main" not in script_metadata:
+              raise SystemExit("Wheel is missing the aegisforge-sim-demo console entry point")
           expected = {
               "aegisforge/web/index.html",
               "aegisforge/web/app.css",
@@ -64,5 +74,5 @@ jobs:
           missing = sorted(expected - names)
           if missing:
               raise SystemExit(f"Wheel is missing browser assets: {missing}")
-          print(f"Wheel contains all {len(expected)} browser workbench assets.")
+          print(f"Wheel contains all {len(expected)} browser workbench assets and the simulation demo command.")
           PY

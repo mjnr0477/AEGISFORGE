@@ -27,16 +27,101 @@ def _regular_metadata(path: Path) -> os.stat_result:
         raise UnsafeScanFileError(f"refusing non-regular or changed file: {path}")
     return info
 
-def read_source_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
-    before = _regular_metadata(path)
-    if before.st_size > max_bytes:
-        raise ValueError(f"file exceeds {max_bytes} bytes: {path}")
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    fd = os.open(path, flags)
+def _supports_safe_dir_fd_open() -> bool:
+    return (
+        os.open in getattr(os, "supports_dir_fd", set())
+        and hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+    )
+
+
+def _open_directory_chain(directory: Path) -> int:
+    """Open an absolute directory one component at a time without following links."""
+    absolute = Path(os.path.abspath(directory))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(absolute.anchor or os.sep, flags)
+    try:
+        for component in absolute.parts[1:]:
+            next_fd = os.open(component, flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _open_file_descriptor(path: Path, root: Path | None = None) -> int:
+    """Open a regular-file candidate relative to a pinned directory descriptor."""
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    if not _supports_safe_dir_fd_open():
+        before = _regular_metadata(path)
+        fd = os.open(path, flags)
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+        ):
+            os.close(fd)
+            raise UnsafeScanFileError(f"refusing changed file: {path}")
+        return fd
+
+    if root is None:
+        root_path = Path(path).parent.resolve()
+        relative = Path(path).name
+        directory_parts = ()
+    else:
+        root_path = Path(root).expanduser().resolve()
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            candidate = root_path / candidate
+        try:
+            relative_path = candidate.relative_to(root_path)
+        except ValueError as exc:
+            raise UnsafeScanFileError(f"refusing file outside scan root: {path}") from exc
+        if not relative_path.parts or any(part in {"", ".", ".."} for part in relative_path.parts):
+            raise UnsafeScanFileError(f"refusing unsafe file path: {path}")
+        relative = relative_path.parts[-1]
+        directory_parts = relative_path.parts[:-1]
+
+    directory_fd = _open_directory_chain(root_path)
+    try:
+        for component in directory_parts:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return os.open(relative, flags, dir_fd=directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def read_source_file(
+    path: Path,
+    max_bytes: int = MAX_FILE_BYTES,
+    *,
+    root: Path | None = None,
+) -> str:
+    """Read a bounded regular file without traversing symlinked path components.
+
+    When a scan root is supplied, every path component below it is opened
+    relative to a pinned directory descriptor, preventing a swapped directory
+    symlink from redirecting the read outside that root.
+    """
+    fd = _open_file_descriptor(Path(path), root=root)
     try:
         opened = os.fstat(fd)
-        if not stat.S_ISREG(opened.st_mode) or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise UnsafeScanFileError(f"refusing changed file: {path}")
+        if not stat.S_ISREG(opened.st_mode):
+            raise UnsafeScanFileError(f"refusing non-regular file: {path}")
         if opened.st_size > max_bytes:
             raise ValueError(f"file exceeds {max_bytes} bytes: {path}")
         chunks, remaining = [], max_bytes + 1
@@ -109,7 +194,7 @@ def scan_directory(target: str | Path) -> ScanResult:
     scanned = 0
     for path in paths:
         try:
-            source = read_source_file(path)
+            source = read_source_file(path, root=root)
             rel = path.relative_to(root).as_posix()
             scanned += 1
             findings.extend(analyze_text(source, rel))

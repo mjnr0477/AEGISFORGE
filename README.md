@@ -170,7 +170,7 @@ GitHub Actions runs the unit suite on Python 3.10, 3.11, 3.12, and 3.13; it also
 
 ## Roadmap
 
-The adapter boundary and an in-memory simulator are now included. Next: build one narrowly scoped, real integration behind that boundary only after its authentication, resource identity, failure modes, and rollback behavior are independently reviewed and tested. AegisForge is not a general autonomous intelligence or a universal system controller.
+The adapter boundary and an in-memory simulator are now included. Adapter calls accept bounded JSON-only arguments (deeply frozen before validation, scope resolution and handler execution); adapter handlers and operation declarations are snapshotted at registration. The simulator offers status inspection, simulated service restart, and simulated mode changes, with separate capabilities and one-time approval for state changes. It has no operating-system, network, live-service, or physical-device access. Next: build one narrowly scoped, real integration behind that boundary only after its authentication, resource identity, failure modes, and rollback behavior are independently reviewed and tested. AegisForge is not a general autonomous intelligence or a universal system controller.
 
 ## License
 

@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.5.0 — scoped authority kernel
+- Added a read-only `authority audit` CLI command that verifies the saved hash chain and exposes unresolved execution starts without retrying them.
 
 - Added a default-deny capability model with exact-resource, subject-specific and expiring grants.
 - Required short-lived, exact-scope, single-use approval tokens for capabilities marked as mutating.

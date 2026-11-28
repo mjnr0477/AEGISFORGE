@@ -143,6 +143,14 @@ class AdapterRegistryTests(unittest.TestCase):
             self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
                                  subject="operator", arguments={"mode": float("nan")})
 
+    def test_integer_bounds_and_invalid_unicode_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": 1 << 63})
+        with self.assertRaises(ValueError):
+            self.registry.invoke(adapter_id="simulation", operation_name="set_mode",
+                                 subject="operator", arguments={"mode": "\ud800"})
+
     def test_validator_receives_deeply_immutable_arguments(self):
         def reject_mutation(arguments):
             arguments["nested"]["value"] = "changed"

@@ -203,21 +203,39 @@ class _AuditTrail:
                 "event": event,
             }
             entry = {**payload, "hash": self._digest(payload)}
-            line = json.dumps(entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+            line = (
+                json.dumps(entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                .encode("utf-8") + b"\\n"
+            )
             if self.path is not None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 if self.path.is_symlink():
                     raise AuditLogIntegrityError("audit log path must not be a symbolic link")
                 flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
                 flags |= getattr(os, "O_NOFOLLOW", 0)
+                flags |= getattr(os, "O_NONBLOCK", 0)
+                descriptor: int | None = None
                 try:
                     descriptor = os.open(self.path, flags, 0o600)
-                    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+                    with os.fdopen(descriptor, "ab") as handle:
+                        descriptor = None
+                        metadata = os.fstat(handle.fileno())
+                        if not stat.S_ISREG(metadata.st_mode):
+                            raise AuditLogIntegrityError("audit log must be a regular file")
+                        if metadata.st_size + len(line) > MAX_AUDIT_LOG_BYTES:
+                            raise AuditLogIntegrityError(
+                                f"audit log append would exceed the {MAX_AUDIT_LOG_BYTES}-byte safety limit"
+                            )
                         handle.write(line)
                         handle.flush()
                         os.fsync(handle.fileno())
+                except AuditLogIntegrityError:
+                    raise
                 except OSError as exc:
                     raise AuditLogIntegrityError(f"cannot append audit log: {exc}") from exc
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
             self._entries.append(entry)
             return int(entry["sequence"])
 
